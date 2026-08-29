@@ -232,9 +232,22 @@ function exportProfile(id) {
     notes: readJSON(notesKey(id), blankNotes())
   };
 }
+function uniqueName(base) {
+  base = (base || "Imported").trim().slice(0, 24) || "Imported";
+  var taken = {};
+  book.users.forEach(function (u) { taken[u.name.toLowerCase()] = true; });
+  if (!taken[base.toLowerCase()]) return base;
+  var tryName = (base + " (imported)").slice(0, 24);
+  if (!taken[tryName.toLowerCase()]) return tryName;
+  for (var n = 2; n < 50; n++) {
+    var c = (base + " " + n).slice(0, 24);
+    if (!taken[c.toLowerCase()]) return c;
+  }
+  return base + " " + Date.now().toString(36).slice(-4);
+}
 function importProfile(obj) {
   if (!obj || obj.format !== "digital-assets-academy/profile") throw new Error("Not a Digital Assets Academy profile file.");
-  var u = createUser((obj.profile && obj.profile.name ? obj.profile.name : "Imported") + "");
+  var u = createUser(uniqueName(obj.profile && obj.profile.name));
   if (obj.profile) styleUser(u.id, obj.profile.avatar, obj.profile.color);
   var st = blankState();
   if (obj.state) for (var k in st) if (k in obj.state) st[k] = obj.state[k];
