@@ -39,6 +39,7 @@ function blankState() {
     hearts: MAX_HEARTS, heartTs: Date.now(),
     read: {}, quiz: {}, seen: {}, mistakes: {}.mistakes || [],
     glossary: {},                 // term -> ISO timestamp unlocked
+    lastBackup: null,             // ISO timestamp of the last exported backup
     started: todayKey()
   };
 }
@@ -53,7 +54,7 @@ function seed() {
     id: uid(), name: "You", avatar: AVATARS[0], color: COLORS[0],
     created: new Date().toISOString(), lastSeen: new Date().toISOString()
   };
-  book = { users: [first], activeId: first.id };
+  book = { users: [first], activeId: first.id, settings: { autoBackup: true } };
   writeJSON(USERS_KEY, book);
   var st = blankState();
   if (legacy && typeof legacy === "object") {
@@ -66,6 +67,7 @@ function seed() {
 if (!book || !book.users || !book.users.length) seed();
 if (!book.activeId || !book.users.some(function (u) { return u.id === book.activeId; }))
   book.activeId = book.users[0].id;
+if (!book.settings) { book.settings = { autoBackup: true }; writeJSON(USERS_KEY, book); }
 
 var S = null, N = null;
 
@@ -242,6 +244,90 @@ function importProfile(obj) {
   return u;
 }
 
+/* ------------------------------------------------------------ backups
+ * The profile only exists in this browser, so the app backs itself up.
+ * If the browser supports the File System Access API and a folder has been
+ * chosen, backups are written straight there; otherwise we hand the user a
+ * download. Either way it fires at most once every BACKUP_HOURS.
+ */
+var BACKUP_HOURS = 24;
+var IDB_NAME = "da-academy", IDB_STORE = "handles";
+
+function idb() {
+  return new Promise(function (res, rej) {
+    if (!window.indexedDB) return rej(new Error("no indexedDB"));
+    var r = indexedDB.open(IDB_NAME, 1);
+    r.onupgradeneeded = function () { r.result.createObjectStore(IDB_STORE); };
+    r.onsuccess = function () { res(r.result); };
+    r.onerror = function () { rej(r.error); };
+  });
+}
+function idbGet(k) {
+  return idb().then(function (db) {
+    return new Promise(function (res, rej) {
+      var t = db.transaction(IDB_STORE, "readonly").objectStore(IDB_STORE).get(k);
+      t.onsuccess = function () { res(t.result); };
+      t.onerror = function () { rej(t.error); };
+    });
+  }).catch(function () { return null; });
+}
+function idbSet(k, v) {
+  return idb().then(function (db) {
+    return new Promise(function (res, rej) {
+      var t = db.transaction(IDB_STORE, "readwrite").objectStore(IDB_STORE).put(v, k);
+      t.onsuccess = function () { res(true); };
+      t.onerror = function () { rej(t.error); };
+    });
+  }).catch(function () { return false; });
+}
+
+function backupSupported() { return typeof window.showDirectoryPicker === "function"; }
+function getBackupDir() { return idbGet("backupDir"); }
+function clearBackupDir() { return idbSet("backupDir", null); }
+function chooseBackupDir() {
+  if (!backupSupported()) return Promise.reject(new Error("This browser cannot write to a folder. Use Chrome or Edge, or download backups instead."));
+  return window.showDirectoryPicker({ mode: "readwrite", id: "da-academy-backups" })
+    .then(function (dir) { return idbSet("backupDir", dir).then(function () { return dir; }); });
+}
+function dirPermission(dir, request) {
+  if (!dir || !dir.queryPermission) return Promise.resolve("granted");
+  return dir.queryPermission({ mode: "readwrite" }).then(function (p) {
+    if (p === "granted" || !request) return p;
+    return dir.requestPermission({ mode: "readwrite" });
+  });
+}
+function backupFilename(id) {
+  var u = null;
+  book.users.forEach(function (x) { if (x.id === (id || book.activeId)) u = x; });
+  var nm = (u ? u.name : "profile").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return "digital-assets-academy-" + (nm || "profile") + "-" + todayKey() + ".json";
+}
+/* Writes to the chosen folder. Resolves with the folder name, or rejects. */
+function writeBackupToFolder(request) {
+  return getBackupDir().then(function (dir) {
+    if (!dir) throw new Error("no folder chosen");
+    return dirPermission(dir, request).then(function (p) {
+      if (p !== "granted") throw new Error("permission not granted");
+      return dir.getFileHandle(backupFilename(), { create: true })
+        .then(function (fh) { return fh.createWritable(); })
+        .then(function (w) {
+          return w.write(JSON.stringify(exportProfile(), null, 2)).then(function () { return w.close(); });
+        })
+        .then(function () { markBackedUp(); return dir.name; });
+    });
+  });
+}
+function markBackedUp() { S.lastBackup = new Date().toISOString(); save(); }
+function hoursSinceBackup() {
+  if (!S.lastBackup) return Infinity;
+  return (Date.now() - new Date(S.lastBackup).getTime()) / 3600000;
+}
+function backupDue() {
+  return book.settings.autoBackup !== false && hoursSinceBackup() >= BACKUP_HOURS;
+}
+function setAutoBackup(on) { book.settings.autoBackup = !!on; saveBook(); }
+function autoBackupOn() { return book.settings.autoBackup !== false; }
+
 /* ------------------------------------------------------------ exports */
 return {
   MAX_HEARTS: MAX_HEARTS, HEART_MINUTES: HEART_MINUTES, DAILY_GOAL: DAILY_GOAL,
@@ -258,6 +344,11 @@ return {
   listUsers: listUsers, activeUser: activeUser, switchUser: switchUser,
   createUser: createUser, renameUser: renameUser, styleUser: styleUser,
   deleteUser: deleteUser, resetActive: resetActive,
-  exportProfile: exportProfile, importProfile: importProfile
+  exportProfile: exportProfile, importProfile: importProfile,
+  BACKUP_HOURS: BACKUP_HOURS,
+  backupSupported: backupSupported, getBackupDir: getBackupDir, chooseBackupDir: chooseBackupDir,
+  clearBackupDir: clearBackupDir, writeBackupToFolder: writeBackupToFolder,
+  markBackedUp: markBackedUp, hoursSinceBackup: hoursSinceBackup, backupDue: backupDue,
+  backupFilename: backupFilename, setAutoBackup: setAutoBackup, autoBackupOn: autoBackupOn
 };
 })();

@@ -116,6 +116,14 @@ function profileMenu() {
         (users.length > 1 ? '<button class="btn btn-sm btn-ghost danger" data-del="' + u.id + '">Delete</button>' : "") +
       '</div>';
     }).join("") + '</div>' +
+    '<h4 style="margin:22px 0 6px">Backups</h4>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:10px">Nothing here is on a server, so the app backs itself up when you open it and the last copy is more than a day old. Pick a folder and it writes there by itself; otherwise it hands you a download.</p>' +
+    '<div class="row" style="margin-bottom:6px">' +
+      '<label class="chk"><input type="checkbox" id="autobk"' + (DA.autoBackupOn() ? " checked" : "") + '> Daily backup</label>' +
+      '<button class="btn btn-sm btn-ghost" id="bkfolder">' + (DA.backupSupported() ? "Choose folder…" : "Folder unsupported here") + '</button>' +
+      '<button class="btn btn-sm btn-ghost" id="bknow">Back up now</button>' +
+      '<span class="muted" id="bkstate" style="font-size:12.5px"></span>' +
+    '</div>' +
     '<div class="row" style="margin-top:18px">' +
       '<input class="tin" id="newname" placeholder="New profile name" maxlength="24">' +
       '<button class="btn btn-sm" id="addp">Add profile</button>' +
@@ -143,6 +151,31 @@ function profileMenu() {
         DA.deleteUser(b.dataset.del); closeModal(); paintHud(); route(); profileMenu();
       };
     });
+    var bkstate = card.querySelector("#bkstate");
+    function paintBk() {
+      var h = DA.hoursSinceBackup();
+      DA.getBackupDir().then(function (dir) {
+        bkstate.textContent = (h === Infinity ? "Never backed up" :
+          h < 24 ? "Backed up today" :
+          Math.floor(h / 24) === 1 ? "1 day since last backup" :
+          Math.floor(h / 24) + " days since last backup") +
+          (dir ? " · folder: " + dir.name : "");
+      });
+    }
+    paintBk();
+    card.querySelector("#autobk").onchange = function (e) {
+      DA.setAutoBackup(e.target.checked);
+      toast(e.target.checked ? "Daily backup on" : "Daily backup off");
+    };
+    card.querySelector("#bknow").onclick = function () { runBackupNow(true).then(paintBk); };
+    var bf = card.querySelector("#bkfolder");
+    if (DA.backupSupported()) bf.onclick = function () {
+      DA.chooseBackupDir()
+        .then(function () { return runBackupNow(true); })
+        .then(paintBk)
+        .catch(function (e) { if (e && e.name !== "AbortError") toast(esc(e.message || "Could not use that folder")); });
+    }; else bf.disabled = true;
+
     card.querySelector("#addp").onclick = function () {
       var v = card.querySelector("#newname").value.trim();
       if (!v) { card.querySelector("#newname").focus(); return; }
@@ -1054,6 +1087,66 @@ function viewProgress() {
   };
 }
 
+/* ---------------------------------------------------------------- backups */
+function runBackupNow(userGesture) {
+  return DA.writeBackupToFolder(!!userGesture)
+    .then(function (folder) {
+      hideBackupBar();
+      toast("Backup saved to " + esc(folder));
+      return true;
+    })
+    .catch(function () {
+      // No folder, or permission withheld — fall back to a download.
+      if (!userGesture) return false;
+      downloadJSON(DA.exportProfile());
+      DA.markBackedUp();
+      hideBackupBar();
+      toast("Backup downloaded");
+      return true;
+    });
+}
+
+function showBackupBar() {
+  if (document.getElementById("backupbar")) return;
+  var h = DA.hoursSinceBackup();
+  var when = h === Infinity ? "You have never backed this profile up."
+           : h < 48 ? "Your last backup was yesterday."
+           : "Your last backup was " + Math.floor(h / 24) + " days ago.";
+  var bar = el('<div class="backupbar" id="backupbar">' +
+    '<span class="bb-i">↓</span>' +
+    '<span class="bb-t"><b>Daily backup</b> · ' + when +
+      ' Progress lives in this browser only, so a copy on disk is the safety net.</span>' +
+    '<button class="btn btn-sm" id="bb-go">Back up now</button>' +
+    (DA.backupSupported() ? '<button class="btn btn-sm btn-ghost" id="bb-folder">Pick a folder</button>' : "") +
+    '<button class="bb-x" id="bb-later" title="Not now">×</button>' +
+  '</div>');
+  document.getElementById("app").insertBefore(bar, document.getElementById("view"));
+
+  document.getElementById("bb-go").onclick = function () { runBackupNow(true); };
+  document.getElementById("bb-later").onclick = hideBackupBar;
+  var f = document.getElementById("bb-folder");
+  if (f) f.onclick = function () {
+    DA.chooseBackupDir()
+      .then(function () { return runBackupNow(true); })
+      .then(function () { toast("Backups will be written there automatically from now on"); })
+      .catch(function (e) { if (e && e.name !== "AbortError") toast(esc(e.message || "Could not use that folder")); });
+  };
+}
+function hideBackupBar() {
+  var b = document.getElementById("backupbar");
+  if (b) b.remove();
+}
+
+/* Fires on load. Writes silently if the browser still trusts the chosen
+ * folder; otherwise surfaces a one-click bar. Never nags twice in a day. */
+function maybeDailyBackup() {
+  if (!DA.backupDue()) return;
+  DA.getBackupDir().then(function (dir) {
+    if (!dir) return showBackupBar();
+    runBackupNow(false).then(function (done) { if (!done) showBackupBar(); });
+  });
+}
+
 /* ---------------------------------------------------------------- boot */
 document.getElementById("who").onclick = profileMenu;
 
@@ -1072,5 +1165,6 @@ document.addEventListener("keydown", function (e) {
 window.addEventListener("hashchange", function () { document.onkeydown = null; route(); });
 setInterval(paintHud, 60000);
 route();
+setTimeout(maybeDailyBackup, 900);
 
 })();

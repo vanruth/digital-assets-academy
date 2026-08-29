@@ -45,12 +45,22 @@ There is no server, so there are no accounts in the authenticated sense — **pr
 
 To move a profile to another browser or machine, **export** it — that writes a JSON file containing everything — and **import** it on the other side. That is the honest limit of a static site; making progress follow you around automatically would need a backend (an auth provider plus a database), which this deliberately does not have.
 
+## Backups
+
+Progress lives in one browser, so the app backs itself up rather than relying on a scheduled job — nothing outside the browser can read `localStorage`, so a cron on your machine would have nothing to export.
+
+When you open the app and the last backup is more than 24 hours old, a bar appears offering a one-click backup. In Chrome and Edge you can **choose a folder once** (`Profile → Backups → Choose folder…`), after which backups are written there automatically with no click, for as long as the browser keeps the permission. Otherwise it hands you a download. Either way it fires at most once a day, and it only fires on days you actually open the app — which are the only days your progress changes.
+
+Files are named `digital-assets-academy-<profile>-<date>.json` and are the same format as a manual export, so they import straight back through `Profile → Import file…`.
+
+Turn it off with the `Daily backup` checkbox in the profile dialog.
+
 ## Structure
 
 ```
 index.html                       app shell
 assets/css/styles.css            all styling, light and dark
-assets/js/store.js               profiles, per-profile state, glossary unlocking
+assets/js/store.js               profiles, per-profile state, glossary unlocking, backups
 assets/js/notes.js               block editor
 assets/js/app.js                 router, views, quiz engine
 assets/js/data/curriculum.js     10 modules, 52 lessons

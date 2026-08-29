@@ -596,3 +596,21 @@ kbd{
 .unlocked h4{margin:0 0 10px;font-size:14px;color:var(--good)}
 .unlocked ul{margin:0 0 14px;padding-left:20px;font-size:14px;color:var(--ink2);line-height:1.55}
 .unlocked li{margin-bottom:6px}
+
+/* --- daily backup bar --- */
+.backupbar{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  margin:0;padding:11px 20px;background:var(--gold-bg);
+  border-bottom:1px solid color-mix(in srgb,var(--gold) 40%,transparent);
+  font-size:13.5px;color:var(--ink2);
+}
+.bb-i{
+  width:24px;height:24px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+  background:var(--gold);color:#fff;font-size:13px;font-weight:700;
+}
+.bb-t{flex:1;min-width:200px;line-height:1.45}
+.bb-t b{color:var(--ink)}
+.bb-x{border:0;background:none;font-size:20px;line-height:1;color:var(--ink3);cursor:pointer;padding:0 4px}
+.bb-x:hover{color:var(--ink)}
+.chk{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;cursor:pointer}
+.chk input{width:15px;height:15px;accent-color:var(--brand);cursor:pointer}
