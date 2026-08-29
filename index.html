@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Digital Assets Academy</title>
+<meta name="description" content="A syllabus and Duolingo-style quiz on how digital assets work, current to 2026.">
+<meta name="theme-color" content="#0b1020">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+
+<div id="app">
+  <header class="topbar">
+    <button class="brand" data-nav="home" type="button">
+      <span class="brand-mark">◈</span>
+      <span class="brand-text">Digital Assets <em>Academy</em></span>
+    </button>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab" data-nav="syllabus" type="button">Syllabus</button>
+      <button class="tab" data-nav="quiz" type="button">Quiz</button>
+      <button class="tab" data-nav="progress" type="button">Progress</button>
+    </nav>
+
+    <div class="hud">
+      <span class="hud-item hud-streak" title="Day streak"><i>🔥</i><b id="hud-streak">0</b></span>
+      <span class="hud-item hud-xp" title="Total XP"><i>◆</i><b id="hud-xp">0</b></span>
+      <span class="hud-item hud-hearts" title="Hearts"><i>♥</i><b id="hud-hearts">5</b></span>
+    </div>
+  </header>
+
+  <main id="view" tabindex="-1"></main>
+
+  <footer class="foot">
+    <span>Content current to <b>August 2026</b>. Figures are point-in-time — see <a href="sources.md">sources</a>.</span>
+    <span class="foot-sep">·</span>
+    <span>Not investment advice.</span>
+  </footer>
+</div>
+
+<div id="toast" class="toast" aria-live="polite"></div>
+
+<script src="assets/js/data/curriculum.js"></script>
+<script src="assets/js/data/questions.js"></script>
+<script src="assets/js/app.js"></script>
+</body>
+</html>
