@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Digital Assets Academy</title>
-<meta name="description" content="A syllabus and Duolingo-style quiz on how digital assets work, current to 2026.">
+<meta name="description" content="A syllabus, notes and a Duolingo-style quiz on how digital assets work, current to 2026.">
 <meta name="theme-color" content="#0b1020">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
-<link rel="stylesheet" href="assets/css/styles.css">
+<link rel="stylesheet" href="assets/css/styles.css?v=2.0.3">
 </head>
 <body>
 
@@ -21,6 +21,8 @@
     <nav class="tabs" role="tablist">
       <button class="tab" data-nav="syllabus" type="button">Syllabus</button>
       <button class="tab" data-nav="quiz" type="button">Quiz</button>
+      <button class="tab" data-nav="glossary" type="button">Glossary</button>
+      <button class="tab" data-nav="notes" type="button">Notes</button>
       <button class="tab" data-nav="progress" type="button">Progress</button>
     </nav>
 
@@ -28,6 +30,9 @@
       <span class="hud-item hud-streak" title="Day streak"><i>🔥</i><b id="hud-streak">0</b></span>
       <span class="hud-item hud-xp" title="Total XP"><i>◆</i><b id="hud-xp">0</b></span>
       <span class="hud-item hud-hearts" title="Hearts"><i>♥</i><b id="hud-hearts">5</b></span>
+      <button class="who" id="who" type="button" title="Switch profile">
+        <span class="who-av" id="who-av">◈</span><span class="who-name" id="who-name">You</span>
+      </button>
     </div>
   </header>
 
@@ -40,10 +45,30 @@
   </footer>
 </div>
 
-<div id="toast" class="toast" aria-live="polite"></div>
+<button id="notefab" class="notefab" type="button" title="Notes (Cmd/Ctrl + J)">
+  <span>📝</span><b>Notes</b>
+</button>
 
-<script src="assets/js/data/curriculum.js"></script>
-<script src="assets/js/data/questions.js"></script>
-<script src="assets/js/app.js"></script>
+<aside id="drawer" class="drawer" aria-label="Notes" hidden>
+  <div class="drawer-head">
+    <strong class="drawer-title">Notes</strong>
+    <select id="dw-page" class="dw-select" aria-label="Choose a note"></select>
+    <button id="dw-new" class="btn btn-sm btn-ghost" type="button">+ New</button>
+    <a id="dw-open" class="btn btn-sm btn-ghost" href="#/notes">Expand</a>
+    <button id="dw-close" class="dw-x" type="button" aria-label="Close">×</button>
+  </div>
+  <div id="dw-body" class="drawer-body"></div>
+</aside>
+<div id="drawer-scrim" class="drawer-scrim" hidden></div>
+
+<div id="toast" class="toast" aria-live="polite"></div>
+<div id="modal" class="modal" hidden></div>
+
+<script src="assets/js/data/curriculum.js?v=2.0.3"></script>
+<script src="assets/js/data/questions.js?v=2.0.3"></script>
+<script src="assets/js/data/glossary.js?v=2.0.3"></script>
+<script src="assets/js/store.js?v=2.0.3"></script>
+<script src="assets/js/notes.js?v=2.0.3"></script>
+<script src="assets/js/app.js?v=2.0.3"></script>
 </body>
 </html>
