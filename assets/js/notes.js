@@ -152,7 +152,7 @@ function mount(root, page, opts) {
       '<div class="ne">' +
         '<div class="ne-head">' +
           '<button class="ne-icon" title="Change icon">' + (page.icon || "📝") + '</button>' +
-          '<input class="ne-title" value="' + esc(page.title || "") + '" placeholder="Untitled" maxlength="90">' +
+          '<textarea class="ne-title" rows="1" placeholder="Untitled" maxlength="120" spellcheck="false">' + esc(page.title || "") + '</textarea>' +
         '</div>' +
         (page.ref ? '<div class="ne-ref">Linked to ' + esc(page.ref.label || page.ref.id) +
                     (page.ref.href ? ' · <a href="' + page.ref.href + '">open</a>' : "") + '</div>' : "") +
@@ -262,6 +262,9 @@ function mount(root, page, opts) {
     var id = c.closest(".nb").dataset.id, b = blk(id); if (!b) return;
 
     if (!slash && c.textContent === "/") { openSlash(id, c); }
+    // Browsers leave a lone <br> behind when a block is emptied, which breaks
+    // the :empty placeholder. Clear it so the hint can come back.
+    if (!c.textContent.length && /^(?:<br\s*\/?>)+$/i.test(c.innerHTML.trim())) c.innerHTML = "";
     b.html = c.innerHTML;
     if (b.type !== "code" && tryMarkdown(b, c)) return;
     touch();
@@ -350,9 +353,13 @@ function mount(root, page, opts) {
       page.blocks.push(nb); renderBlocks(nb.id); touch(); return;
     }
     if (e.target.closest(".ne-icon")) { pickIcon(e.target.closest(".ne-icon")); return; }
-    if (e.target.closest(".ne-blocks") === null && e.target.closest(".ne")) {
+    // Click the empty space below the blocks to resume writing. Must be the
+    // container itself — clicking the title used to land here and steal focus.
+    if (e.target.classList && e.target.classList.contains("ne-blocks")) {
       var last = page.blocks[page.blocks.length - 1];
-      if (last && last.type === "p" && !clean(last.html).trim()) refocus(last.id);
+      if (last && last.type === "p" && !clean(last.html).trim()) { refocus(last.id); return; }
+      var nb = { id: bid(), type: "p", html: "" };
+      page.blocks.push(nb); renderBlocks(nb.id); touch();
     }
   });
 
@@ -428,10 +435,19 @@ function mount(root, page, opts) {
   renderShell();
 
   var titleEl = root.querySelector(".ne-title");
-  titleEl.addEventListener("input", function () { page.title = titleEl.value; touch(); });
+  function autosize() { titleEl.style.height = "auto"; titleEl.style.height = titleEl.scrollHeight + "px"; }
+  autosize();
+  titleEl.addEventListener("input", function () {
+    page.title = titleEl.value.replace(/\n/g, " ");
+    autosize(); touch();
+  });
   titleEl.addEventListener("keydown", function (e) {
     if (e.key === "Enter") { e.preventDefault(); if (page.blocks[0]) refocus(page.blocks[0].id); }
+    if (e.key === "ArrowDown" && titleEl.selectionStart === titleEl.value.length && page.blocks[0]) {
+      e.preventDefault(); refocus(page.blocks[0].id);
+    }
   });
+  window.addEventListener("resize", autosize);
 
   return {
     focusFirst: function () { if (page.blocks[0]) refocus(page.blocks[0].id); },

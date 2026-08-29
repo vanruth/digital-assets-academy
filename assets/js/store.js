@@ -40,6 +40,8 @@ function blankState() {
     read: {}, quiz: {}, seen: {}, mistakes: {}.mistakes || [],
     glossary: {},                 // term -> ISO timestamp unlocked
     lastBackup: null,             // ISO timestamp of the last exported backup
+    marks: {},                    // lessonId -> [highlight/comment]
+    cards: {},                    // glossary term -> spaced-repetition record
     started: todayKey()
   };
 }
@@ -54,7 +56,7 @@ function seed() {
     id: uid(), name: "You", avatar: AVATARS[0], color: COLORS[0],
     created: new Date().toISOString(), lastSeen: new Date().toISOString()
   };
-  book = { users: [first], activeId: first.id, settings: { autoBackup: true } };
+  book = { users: [first], activeId: first.id, settings: { autoBackup: true, hearts: true } };
   writeJSON(USERS_KEY, book);
   var st = blankState();
   if (legacy && typeof legacy === "object") {
@@ -67,7 +69,7 @@ function seed() {
 if (!book || !book.users || !book.users.length) seed();
 if (!book.activeId || !book.users.some(function (u) { return u.id === book.activeId; }))
   book.activeId = book.users[0].id;
-if (!book.settings) { book.settings = { autoBackup: true }; writeJSON(USERS_KEY, book); }
+if (!book.settings) { book.settings = { autoBackup: true, hearts: true }; writeJSON(USERS_KEY, book); }
 
 var S = null, N = null;
 
@@ -88,24 +90,27 @@ function saveNotes() { writeJSON(notesKey(book.activeId), N); }
 function saveBook()  { writeJSON(USERS_KEY, book); }
 
 /* ------------------------------------------------------------ hearts/xp */
-function syncHearts() {
-  if (S.hearts >= MAX_HEARTS) { S.heartTs = Date.now(); return; }
-  var gained = Math.floor((Date.now() - S.heartTs) / 60000 / HEART_MINUTES);
-  if (gained > 0) {
-    S.hearts = Math.min(MAX_HEARTS, S.hearts + gained);
-    S.heartTs = S.hearts >= MAX_HEARTS ? Date.now() : S.heartTs + gained * HEART_MINUTES * 60000;
-    save();
-  }
+/* Hearts are a stake, not a timer. Nothing refills by waiting: you earn them
+ * back by clearing a recovery round of questions you have already missed, or
+ * by reading a lesson. They can be switched off entirely.
+ */
+function heartsOn() { return book.settings.hearts !== false; }
+function setHearts(on) {
+  book.settings.hearts = !!on; saveBook();
+  S.hearts = MAX_HEARTS; save();
 }
-function heartsIn() {
-  if (S.hearts >= MAX_HEARTS) return null;
-  return Math.max(1, Math.ceil((S.heartTs + HEART_MINUTES * 60000 - Date.now()) / 60000));
-}
+function syncHearts() { if (!heartsOn()) S.hearts = MAX_HEARTS; }
 function loseHeart() {
-  if (S.hearts === MAX_HEARTS) S.heartTs = Date.now();
+  if (!heartsOn()) return;
   S.hearts = Math.max(0, S.hearts - 1);
   save();
 }
+function gainHeart(n) {
+  if (!heartsOn()) return;
+  S.hearts = Math.min(MAX_HEARTS, S.hearts + (n || 1));
+  save();
+}
+function refillHearts() { S.hearts = MAX_HEARTS; save(); }
 function addXp(n) {
   S.xp += n;
   var t = todayKey();
@@ -173,6 +178,62 @@ function deletePage(id) {
   saveNotes();
 }
 function touchPage(p) { p.updated = new Date().toISOString(); saveNotes(); }
+
+/* ------------------------------------------------------------ annotations */
+function marksFor(lessonId) {
+  if (!S.marks) S.marks = {};
+  if (!S.marks[lessonId]) S.marks[lessonId] = [];
+  return S.marks[lessonId];
+}
+function markCount(lessonId) { return ((S.marks || {})[lessonId] || []).length; }
+function markTotals() {
+  var m = S.marks || {}, hl = 0, notes = 0, lessons = 0;
+  for (var k in m) {
+    if (!m[k].length) continue;
+    lessons++;
+    m[k].forEach(function (x) { hl++; if (x.note && x.note.trim()) notes++; });
+  }
+  return { highlights: hl, comments: notes, lessons: lessons };
+}
+
+/* ------------------------------------------------------------ flashcards
+ * Leitner-style boxes. A card only exists for a term you have unlocked.
+ */
+var BOX_DAYS = [0, 1, 3, 7, 16, 35];
+function cards() { if (!S.cards) S.cards = {}; return S.cards; }
+function hasCard(term) { return !!cards()[term]; }
+function addCard(term) {
+  if (cards()[term]) return false;
+  cards()[term] = { box: 0, due: new Date().toISOString(), seen: 0, right: 0, wrong: 0 };
+  save(); return true;
+}
+function removeCard(term) { delete cards()[term]; save(); }
+function cardDue(term) {
+  var c = cards()[term];
+  return !!c && new Date(c.due).getTime() <= Date.now();
+}
+function dueCards() {
+  var out = [];
+  for (var t in cards()) if (cardDue(t)) out.push(t);
+  return out;
+}
+function gradeCard(term, grade) {          // "again" | "good" | "easy"
+  var c = cards()[term]; if (!c) return;
+  c.seen++;
+  if (grade === "again") { c.box = 0; c.wrong++; }
+  else { c.right++; c.box = Math.min(BOX_DAYS.length - 1, c.box + (grade === "easy" ? 2 : 1)); }
+  var days = BOX_DAYS[c.box];
+  var when = new Date();
+  if (days === 0) when.setMinutes(when.getMinutes() + 10);
+  else when.setDate(when.getDate() + days);
+  c.due = when.toISOString();
+  save();
+}
+function cardStats() {
+  var all = Object.keys(cards()), due = dueCards().length, learned = 0;
+  all.forEach(function (t) { if (cards()[t].box >= 3) learned++; });
+  return { total: all.length, due: due, learned: learned };
+}
 
 /* ------------------------------------------------------------ profiles API */
 function listUsers() { return book.users.slice(); }
@@ -349,9 +410,13 @@ return {
   get notes() { return N; },
   save: save, saveNotes: saveNotes,
   todayKey: todayKey,
-  syncHearts: syncHearts, heartsIn: heartsIn, loseHeart: loseHeart, addXp: addXp,
+  syncHearts: syncHearts, loseHeart: loseHeart, gainHeart: gainHeart,
+  refillHearts: refillHearts, heartsOn: heartsOn, setHearts: setHearts, addXp: addXp,
   termsForLesson: termsForLesson, markRead: markRead, unmarkRead: unmarkRead,
   isUnlocked: isUnlocked, glossaryCounts: glossaryCounts,
+  marksFor: marksFor, markCount: markCount, markTotals: markTotals,
+  cards: cards, hasCard: hasCard, addCard: addCard, removeCard: removeCard,
+  dueCards: dueCards, gradeCard: gradeCard, cardStats: cardStats, cardDue: cardDue,
   newPage: newPage, pageById: pageById, pageForRef: pageForRef,
   deletePage: deletePage, touchPage: touchPage, bid: bid,
   listUsers: listUsers, activeUser: activeUser, switchUser: switchUser,

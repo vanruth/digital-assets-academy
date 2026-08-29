@@ -2,12 +2,13 @@
 
 A self-contained learning app on how digital assets work, written for people who have to make decisions about them — not for people who want a glossary. Content is current to **August 2026**.
 
-Four parts:
+Five parts:
 
 - **Syllabus** — 10 modules, 52 lessons. Taxonomy, cryptography and consensus, programmability, scaling and the multi-chain landscape, stablecoins, the tokenised money hierarchy, asset tokenisation, market structure and custody, risk and capital, and a 2026 field map.
 - **Quiz** — 244 questions across 10 units in a Duolingo-style path: hearts, XP, day streaks, a daily goal, unit unlocking, and a mistakes queue you can drill separately. Six question formats: multiple choice, select-all, true/false, typed answer, matching pairs and ordering.
+- **Flashcards** — turn any unlocked glossary term into a card and review it on a Leitner schedule. Grade Again / Good / Easy; right answers push a card further out, wrong ones bring it straight back.
 - **Glossary** — 192 terms. Each definition stays locked until you mark the lesson that introduces it as read; marking a lesson read tells you exactly which terms it just added.
-- **Notes** — a Notion-style block editor with a slide-over drawer you can pull up while reading or mid-question.
+- **Notes** — a Notion-style block editor with a slide-over drawer you can pull up while reading or mid-question. Lesson text can also be **highlighted and commented on**, and highlights can be sent straight into a note.
 
 ## Running it
 
@@ -38,6 +39,18 @@ The editor is block-based: each block is its own type, and you can convert betwe
 - **Cmd/Ctrl + J** opens the notes drawer from anywhere, including mid-question. Keyboard input inside the drawer never reaches the quiz.
 - Notes auto-save as you type. A note opened from a lesson or module is linked to it, and the drawer offers to create one when the page you are on does not have a note yet.
 - Any note can be downloaded as Markdown.
+
+## Hearts
+
+Hearts are a stake, not a timer — **nothing refills by waiting.** A wrong answer costs one and the question returns later in the same set. Run out and you clear a **recovery round**: three questions you have already missed, drawn from your mistakes queue. Clear it and all five hearts come back immediately. Reading a lesson also returns one.
+
+If you would rather drill without any stake, turn hearts off in the profile dialog. Wrong answers then cost nothing and questions simply repeat until you get them right.
+
+## Highlights and comments
+
+Select any passage in a lesson to get a toolbar: four highlight colours, a comment, or copy. Click an existing highlight to edit its comment, change its colour or remove it. Everything is listed in a panel under the lesson, and **Send to my notes** drops the lot into that lesson's note as quotes with your comments underneath.
+
+Highlights are stored as character offsets into the lesson text plus the quoted passage itself. If the wording of a lesson is ever edited, a highlight relocates itself by searching for its quote, and is flagged in the panel rather than silently dropped if it cannot be found.
 
 ## Profiles
 

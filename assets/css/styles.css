@@ -431,11 +431,14 @@ kbd{
 .ne-icon{border:0;background:none;font-size:26px;cursor:pointer;padding:2px 4px;border-radius:8px;line-height:1}
 .ne-icon:hover{background:var(--bg)}
 .ne-title{
-  flex:1;font:inherit;font-size:27px;font-weight:800;letter-spacing:-.02em;border:0;background:none;
-  color:var(--ink);padding:4px 2px;min-width:0;
+  flex:1;font:inherit;font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.22;
+  border:0;background:none;color:var(--ink);padding:4px 2px;min-width:0;
+  resize:none;overflow:hidden;display:block;
 }
 .ne-title:focus{outline:none}
 .ne-title::placeholder{color:var(--ink3);opacity:.6}
+.ne-head{align-items:flex-start}
+.ne-icon{margin-top:4px}
 .ne-ref{font-size:12.5px;color:var(--ink3);margin:0 0 12px 4px}
 .ne-blocks{margin-top:6px}
 
@@ -451,7 +454,12 @@ kbd{
   flex:1;min-width:0;outline:none;padding:3px 4px;border-radius:5px;line-height:1.62;
   word-break:break-word;
 }
-.nb-c:empty::before{content:attr(data-ph);color:var(--ink3);opacity:.55;pointer-events:none}
+/* Only the focused empty block shows its hint — and the first block when the
+   note is still blank — so several empty blocks do not repeat the same line. */
+.nb-c:empty:focus::before,
+.ne-blocks > .nb:first-child .nb-c:empty::before{
+  content:attr(data-ph);color:var(--ink3);opacity:.55;pointer-events:none;
+}
 .nb-m{flex:0 0 14px;color:var(--ink2);line-height:1.62;padding-top:2px;font-size:19px;user-select:none;text-align:center}
 .nb-num{font-variant-numeric:tabular-nums;font-size:14.5px;padding-top:4px}
 .nb-check{
@@ -614,3 +622,114 @@ kbd{
 .bb-x:hover{color:var(--ink)}
 .chk{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;cursor:pointer}
 .chk input{width:15px;height:15px;accent-color:var(--brand);cursor:pointer}
+.pill-warn{background:var(--gold-bg);border-color:color-mix(in srgb,var(--gold) 45%,transparent);color:var(--gold)}
+
+/* ==================== v2.4: highlights, comments, flashcards ============ */
+
+/* --- inline highlights --- */
+mark.hl{
+  background:var(--hl-yellow);color:inherit;padding:.05em 0;border-radius:2px;cursor:pointer;
+  box-decoration-break:clone;-webkit-box-decoration-break:clone;
+}
+mark.hl-yellow{background:var(--hl-yellow)}
+mark.hl-green{background:var(--hl-green)}
+mark.hl-blue{background:var(--hl-blue)}
+mark.hl-pink{background:var(--hl-pink)}
+mark.hl-note{border-bottom:2px solid color-mix(in srgb,var(--ink) 45%,transparent)}
+mark.hl:hover{filter:brightness(.95)}
+:root{
+  --hl-yellow:#fff2a8; --hl-green:#c8f0d2; --hl-blue:#cfe4ff; --hl-pink:#ffd4e5;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --hl-yellow:#4a4014; --hl-green:#14402a; --hl-blue:#16304f; --hl-pink:#451e33;
+  }
+}
+
+/* --- selection toolbar + popup --- */
+.annbar,.annpop{
+  position:absolute;z-index:70;background:var(--bg2);border:1px solid var(--line2);
+  border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,.22);padding:7px;
+}
+.annbar{display:flex;gap:5px;align-items:center}
+.annsep{width:1px;height:20px;background:var(--line2);margin:0 3px}
+.annswatch{
+  width:22px;height:22px;border-radius:50%;border:2px solid transparent;cursor:pointer;padding:0;
+}
+.annswatch.on{border-color:var(--ink)}
+.sw-yellow{background:var(--hl-yellow)} .sw-green{background:var(--hl-green)}
+.sw-blue{background:var(--hl-blue)}     .sw-pink{background:var(--hl-pink)}
+.annbtn{
+  border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--ink2);
+  padding:5px 9px;border-radius:8px;cursor:pointer;white-space:nowrap;
+}
+.annbtn:hover{background:var(--bg);color:var(--ink)}
+.annpop{width:min(320px,92vw)}
+.annpop-q{
+  font-size:13px;color:var(--ink2);border-left:3px solid var(--line2);padding-left:9px;
+  margin-bottom:8px;max-height:80px;overflow:auto;line-height:1.45;
+}
+.annpop-note{
+  width:100%;font:inherit;font-size:14px;padding:9px 10px;border-radius:9px;
+  border:1px solid var(--line2);background:var(--bg);color:inherit;resize:vertical;
+}
+.annpop-note:focus{outline:none;border-color:var(--brand)}
+.annpop-row{display:flex;gap:6px;align-items:center;margin-top:8px}
+
+/* --- per-lesson highlight panel --- */
+.markpanel{margin-top:22px;border-top:1px solid var(--line);padding-top:16px}
+.markpanel h4{margin:0 0 10px;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink3)}
+.markempty{font-size:13.5px;color:var(--ink3);font-style:italic}
+.markrow{
+  display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border-radius:10px;cursor:pointer;
+  border:1px solid transparent;
+}
+.markrow:hover{background:var(--bg);border-color:var(--line)}
+.markrow.orphan{opacity:.6}
+.markdot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;margin-top:5px}
+.marktx{min-width:0}
+.marktx q{font-size:14px;color:var(--ink2);line-height:1.5;quotes:"\\201C" "\\201D"}
+.marknote{margin:5px 0 0;font-size:13.5px;color:var(--ink);font-weight:500}
+
+/* --- glossary card button --- */
+.gl-foot{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-top:4px}
+.cardbtn{
+  border:1px solid var(--line2);background:var(--bg);font:inherit;font-size:11.5px;font-weight:700;
+  color:var(--ink3);padding:3px 9px;border-radius:999px;cursor:pointer;white-space:nowrap;
+}
+.cardbtn:hover{border-color:var(--brand);color:var(--brand)}
+.cardbtn.on{background:var(--gold-bg);border-color:var(--gold);color:var(--gold)}
+
+/* --- deck --- */
+.deckgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
+.deckcard{
+  position:relative;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r);
+  padding:15px 16px;box-shadow:var(--shadow);
+}
+.deckcard.due{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 6%,var(--bg2))}
+.deck-t{font-weight:700;font-size:14.5px;letter-spacing:-.01em;padding-right:20px}
+.deck-m{font-size:11.5px;color:var(--ink3);margin:5px 0 8px;font-weight:600}
+.deck-x{
+  position:absolute;top:8px;right:9px;border:0;background:none;color:var(--ink3);
+  font-size:17px;line-height:1;cursor:pointer;padding:2px 4px;border-radius:6px;
+}
+.deck-x:hover{background:var(--bg);color:var(--bad)}
+
+/* --- review card --- */
+.flash{
+  min-height:230px;background:var(--bg2);border:2px solid var(--line);border-radius:var(--rl);
+  padding:34px 30px;box-shadow:var(--shadow);margin-bottom:22px;cursor:pointer;
+  display:flex;flex-direction:column;justify-content:center;text-align:center;
+}
+.flash.flipped{cursor:default;border-color:var(--brand)}
+.flash-side{display:none}
+.flash:not(.flipped) .flash-front{display:block}
+.flash.flipped .flash-back{display:block}
+.flash-k{
+  font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);
+  display:block;margin-bottom:10px;
+}
+.flash-front h2{margin:0 0 10px;font-size:29px;letter-spacing:-.02em}
+.flash-back p{font-size:17px;line-height:1.6;color:var(--ink);max-width:52ch;margin:0 auto 12px}
+.grades{justify-content:center}
+.grades .btn{min-width:104px}

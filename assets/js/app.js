@@ -9,7 +9,9 @@ var QB = window.DA_QUESTIONS;
 var GL = window.DA_GLOSSARY || [];
 
 var Q_PER_LESSON = 6, XP_CORRECT = 10, XP_COMPLETE = 5, XP_PERFECT = 20, XP_READ = 5;
-var MAX_HEARTS = DA.MAX_HEARTS, HEART_MINUTES = DA.HEART_MINUTES, DAILY_GOAL = DA.DAILY_GOAL;
+var RECOVERY_N = 3;      // questions you must clear to win your hearts back
+var pendingReturn = null;
+var MAX_HEARTS = DA.MAX_HEARTS, DAILY_GOAL = DA.DAILY_GOAL;
 
 function S() { return DA.state; }
 
@@ -31,6 +33,7 @@ function lessonRef(lessonId) {
       if (C.modules[i].lessons[j].id === lessonId) return { m: C.modules[i], l: C.modules[i].lessons[j], i: j };
   return null;
 }
+function qById(id) { for (var i = 0; i < QB.length; i++) if (QB[i].id === id) return QB[i]; return null; }
 function poolFor(mid) { return QB.filter(function (q) { return q.m === mid; }); }
 function unitLessons(mid) { return Math.max(1, Math.ceil(poolFor(mid).length / Q_PER_LESSON)); }
 function quizKey(mid, idx) { return mid + ":" + idx; }
@@ -116,6 +119,8 @@ function profileMenu() {
         (users.length > 1 ? '<button class="btn btn-sm btn-ghost danger" data-del="' + u.id + '">Delete</button>' : "") +
       '</div>';
     }).join("") + '</div>' +
+    '<h4 style="margin:22px 0 6px">Quiz</h4>' +' <p class="muted" style="font-size:13px;margin-bottom:10px">Hearts are a stake, not a timer — nothing refills by waiting. Lose them all and you clear a short recovery round of questions you have already missed. Reading a lesson also returns one.</p>' +
+    '<label class="chk" style="margin-bottom:4px"><input type="checkbox" id="hearton"' + (DA.heartsOn() ? " checked" : "") + '> Use hearts</label>' +
     '<h4 style="margin:22px 0 6px">Backups</h4>' +
     '<p class="muted" style="font-size:13px;margin-bottom:10px">Nothing here is on a server, so the app backs itself up when you open it and the last copy is more than a day old. Pick a folder and it writes there by itself; otherwise it hands you a download.</p>' +
     '<div class="row" style="margin-bottom:6px">' +
@@ -163,6 +168,10 @@ function profileMenu() {
       });
     }
     paintBk();
+    card.querySelector("#hearton").onchange = function (e) {
+      DA.setHearts(e.target.checked); paintHud();
+      toast(e.target.checked ? "Hearts on — wrong answers cost one" : "Hearts off — answer freely");
+    };
     card.querySelector("#autobk").onchange = function (e) {
       DA.setAutoBackup(e.target.checked);
       toast(e.target.checked ? "Daily backup on" : "Daily backup off");
@@ -312,10 +321,12 @@ function route() {
   if (p[0] === "quiz") {
     setTab("quiz");
     if (p[1] === "practice") return startSession("practice", null, null);
+    if (p[1] === "recovery") return startSession("recovery", null, null);
     if (p[1] && p[2] !== undefined) return startSession("unit", p[1], parseInt(p[2], 10));
     return viewQuizPath();
   }
   if (p[0] === "glossary") { setTab("glossary"); return viewGlossary(p[1] ? decodeURIComponent(p[1]) : null); }
+  if (p[0] === "cards")    { setTab("cards");    return p[1] === "review" ? viewReview() : viewCards(); }
   if (p[0] === "notes")    { setTab("notes");    return viewNotes(p[1] || null); }
   if (p[0] === "progress") { setTab("progress"); return viewProgress(); }
   location.hash = "#/";
@@ -359,7 +370,7 @@ function viewHome() {
     '</div>' +
     '<div class="card" style="margin-top:18px">' +
       '<h3>How to use this</h3>' +
-      '<p style="font-size:15px;color:var(--ink2);max-width:70ch">Read a module, then clear its quiz unit. Marking a lesson read adds its terms to your <a href="#/glossary">glossary</a> — the definitions stay locked until you have read the lesson that introduces them. You have ' + MAX_HEARTS + ' hearts; a wrong answer costs one and the question comes back later in the same session. Hearts return one every ' + HEART_MINUTES + ' minutes.</p>' +
+      '<p style="font-size:15px;color:var(--ink2);max-width:70ch">Read a module, then clear its quiz unit. Marking a lesson read adds its terms to your <a href="#/glossary">glossary</a> — the definitions stay locked until you have read the lesson that introduces them. You have ' + MAX_HEARTS + ' hearts; a wrong answer costs one and the question comes back later in the same session. Run out and you clear a short recovery round to get them all back — there is nothing to wait for.</p>' +
       '<p style="font-size:15px;color:var(--ink2);max-width:70ch;margin:0">Press <kbd>Cmd</kbd>/<kbd>Ctrl</kbd> + <kbd>J</kbd> anywhere — including mid-question — to pull up your notes. Everything is stored in this browser only.</p>' +
     '</div>' +
   '</div>');
@@ -393,7 +404,9 @@ function viewModule(mid) {
     return '<button class="mod" data-go="#/syllabus/' + m.id + "/" + i + '" style="flex-direction:row;align-items:center;gap:14px">' +
       '<span class="mod-icon">' + (S().read[l.id] ? "✓" : (i + 1)) + '</span>' +
       '<span style="flex:1"><span class="mod-title" style="display:block">' + esc(l.title) + '</span>' +
-      '<span class="mod-tag" style="display:block">' + l.minutes + ' min · ' + n + ' term' + (n === 1 ? "" : "s") + '</span></span></button>';
+      '<span class="mod-tag" style="display:block">' + l.minutes + " min · " + n + " term" + (n === 1 ? "" : "s") +
+        (DA.markCount(l.id) ? " · " + DA.markCount(l.id) + " highlight" + (DA.markCount(l.id) === 1 ? "" : "s") : "") +
+      '</span></span></button>';
   }).join("");
   render('<div class="wrap">' +
     '<p><a href="#/syllabus" class="muted" style="font-size:14px;text-decoration:none">&larr; All modules</a></p>' +
@@ -446,6 +459,7 @@ function viewLesson(mid, idx) {
                  (DA.isUnlocked(g.t) ? "" : "🔒 ") + esc(g.t) + '</a>';
         }).join("") + '</div></div>' : "") +
       '<div id="unlockbox"></div>' +
+      '<div class="markpanel" id="markpanel"></div>' +
       '<div class="lesson-nav">' +
         (prev ? '<a class="btn btn-ghost btn-sm" href="' + prev + '">&larr; Previous</a>' : "<span></span>") +
         '<div class="row">' +
@@ -456,10 +470,24 @@ function viewLesson(mid, idx) {
       '</div>' +
     '</article></div></div>');
 
+  // Highlighting and margin comments on the lesson text
+  var bodyEl = view.querySelector(".lesson-body");
+  var marks = DA.marksFor(l.id);
+  if (annotator) annotator.close();
+  annotator = DA_ANN.mount(bodyEl, marks, {
+    onChange: function () { DA.save(); },
+    onToast: toast,
+    onRepaint: function (ms) { paintMarkPanel(ms, m, idx); wrapTables(); }
+  });
+  paintMarkPanel(marks, m, idx);
+
   document.getElementById("mark").addEventListener("click", function () {
     if (S().read[l.id]) { DA.unmarkRead(l.id); toast("Marked unread — its terms were removed from the glossary"); viewLesson(mid, idx); return; }
     var fresh = DA.markRead(l.id);
     DA.addXp(XP_READ);
+    var hadHeart = S().hearts;
+    DA.gainHeart(1);
+    var gotHeart = S().hearts > hadHeart;
     paintHud();
     viewLesson(mid, idx);
     var box = document.getElementById("unlockbox");
@@ -467,18 +495,71 @@ function viewLesson(mid, idx) {
       box.innerHTML = '<div class="unlocked pop"><h4>✓ Added ' + fresh.length + ' term' + (fresh.length === 1 ? "" : "s") + ' to your glossary</h4>' +
         '<ul>' + fresh.map(function (g) { return "<li><b>" + esc(g.t) + "</b> — " + esc(g.d) + "</li>"; }).join("") + "</ul>" +
         '<a class="btn btn-sm btn-ghost" href="#/glossary">Open the glossary</a></div>';
-      toast("+" + XP_READ + " XP · " + fresh.length + " term" + (fresh.length === 1 ? "" : "s") + " added to your glossary");
+      toast("+" + XP_READ + " XP · " + fresh.length + " term" + (fresh.length === 1 ? "" : "s") + " added to your glossary" + (gotHeart ? " · ♥ +1" : ""));
       box.scrollIntoView({ behavior: "smooth", block: "center" });
     } else {
-      toast("+" + XP_READ + " XP · lesson marked as read");
+      toast("+" + XP_READ + " XP · lesson marked as read" + (gotHeart ? " · ♥ +1" : ""));
     }
   });
+}
+
+function paintMarkPanel(marks, m, idx) {
+  var host = document.getElementById("markpanel");
+  if (!host) return;
+  var live = marks.filter(function (x) { return !x.orphan; });
+  var lost = marks.filter(function (x) { return x.orphan; });
+  if (!marks.length) {
+    host.innerHTML = '<div class="markempty">Select any passage above to highlight it or attach a comment.</div>';
+    return;
+  }
+  host.innerHTML =
+    '<h4>' + marks.length + " highlight" + (marks.length === 1 ? "" : "s") +
+      " on this lesson" + (lost.length ? " · " + lost.length + " could not be placed" : "") + "</h4>" +
+    live.concat(lost).map(function (x) {
+      return '<div class="markrow' + (x.orphan ? " orphan" : "") + '" data-mid="' + x.id + '">' +
+        '<span class="markdot sw-' + x.color + '"></span>' +
+        '<div class="marktx"><q>' + esc(x.text.length > 180 ? x.text.slice(0, 180) + "…" : x.text) + "</q>" +
+        (x.note && x.note.trim() ? '<p class="marknote">' + esc(x.note) + "</p>" : "") +
+        (x.orphan ? '<p class="marknote muted">The wording this was attached to has changed.</p>' : "") +
+        "</div></div>";
+    }).join("") +
+    '<div class="row" style="margin-top:12px"><button class="btn btn-sm btn-ghost" id="marks-to-note">Send to my notes</button></div>';
+
+  host.querySelectorAll(".markrow").forEach(function (row) {
+    row.onclick = function () {
+      var el2 = view.querySelector('mark[data-mid="' + row.dataset.mid + '"]');
+      if (el2) { el2.scrollIntoView({ behavior: "smooth", block: "center" }); annotator.open(row.dataset.mid); }
+    };
+  });
+  var send = document.getElementById("marks-to-note");
+  if (send) send.onclick = function () { marksToNote(marks, m, idx); };
+}
+
+/* Drops every highlight on this lesson into a note, as a quote block plus
+ * your comment underneath. */
+function marksToNote(marks, m, idx) {
+  if (!marks.length) return;
+  var ctx = { kind: "lesson", id: m.lessons[idx].id, label: "Module " + m.number + " · " + m.lessons[idx].title,
+              href: "#/syllabus/" + m.id + "/" + idx };
+  var page = DA.pageForRef("lesson", ctx.id) || DA.newPage(ctx, ctx.label);
+  var blocks = [{ id: DA.bid(), type: "h3", html: esc("Highlights · " + m.lessons[idx].title) }];
+  marks.forEach(function (x) {
+    blocks.push({ id: DA.bid(), type: "quote", html: esc(x.text) });
+    if (x.note && x.note.trim()) blocks.push({ id: DA.bid(), type: "p", html: esc(x.note) });
+  });
+  var last = page.blocks[page.blocks.length - 1];
+  if (last && last.type === "p" && !last.html.trim()) page.blocks.pop();
+  page.blocks = page.blocks.concat(blocks, [{ id: DA.bid(), type: "p", html: "" }]);
+  DA.touchPage(page);
+  dwPageId = page.id;
+  openDrawer(page.id);
+  toast(marks.length + " highlight" + (marks.length === 1 ? "" : "s") + " sent to your notes");
 }
 
 /* ---------------------------------------------------------------- glossary */
 var glFilter = { q: "", mode: "all", mod: "" };
 function viewGlossary(focusTerm) {
-  var g = DA.glossaryCounts();
+  var g = DA.glossaryCounts(), cs = DA.cardStats();
   var q = norm(glFilter.q);
   var rows = GL.map(function (t, i) { return { t: t, i: i }; }).filter(function (x) {
     var g2 = x.t, unlocked = DA.isUnlocked(g2.t);
@@ -504,9 +585,13 @@ function viewGlossary(focusTerm) {
           (unlocked
             ? "<p>" + esc(t.d) + "</p>"
             : '<p class="gl-hidden">Unlocks when you read ' + (ref ? esc(ref.l.title) : "its lesson") + ".</p>") +
+          '<div class="gl-foot">' +
           (ref ? '<a class="gl-src" href="#/syllabus/' + ref.m.id + "/" + ref.i + '">' +
-                 (unlocked ? "From " : "Read ") + esc(ref.l.title) + " &rarr;</a>" : "") +
-        "</article>";
+                 (unlocked ? "From " : "Read ") + esc(ref.l.title) + " &rarr;</a>" : "<span></span>") +
+          (unlocked ? '<button class="cardbtn' + (DA.hasCard(t.t) ? " on" : "") + '" data-card="' + esc(t.t) + '" title="' +
+                      (DA.hasCard(t.t) ? "In your flashcard deck" : "Add to flashcards") + '">' +
+                      (DA.hasCard(t.t) ? "★ In deck" : "☆ Flashcard") + "</button>" : "") +
+          "</div></article>";
       }).join("") + "</div></section>";
   }).join("");
 
@@ -522,6 +607,8 @@ function viewGlossary(focusTerm) {
       '<select class="tin" id="glmod"><option value="">Every module</option>' +
         C.modules.map(function (m) { return '<option value="' + m.id + '">Module ' + m.number + " · " + esc(m.title) + "</option>"; }).join("") +
       '</select>' +
+      '<button class="btn btn-sm btn-ghost" id="gladd">Add these to flashcards</button>' +
+      '<a class="btn btn-sm" href="#/cards">Deck (' + cs.total + (cs.due ? " · " + cs.due + " due" : "") + ')</a>' +
     '</div>' +
     (groups || '<div class="empty-state"><div class="big">◎</div><h2>Nothing matches</h2><p>Try a different search or filter.</p></div>') +
   '</div>');
@@ -534,10 +621,135 @@ function viewGlossary(focusTerm) {
   var md = document.getElementById("glmod"); md.value = glFilter.mod;
   md.onchange = function () { glFilter.mod = md.value; viewGlossary(); };
 
+  view.querySelectorAll("[data-card]").forEach(function (b) {
+    b.onclick = function () {
+      var term = b.dataset.card;
+      if (DA.hasCard(term)) { DA.removeCard(term); toast("Removed from deck"); }
+      else { DA.addCard(term); toast("Added to flashcards"); }
+      viewGlossary(focusTerm);
+    };
+  });
+  document.getElementById("gladd").onclick = function () {
+    var added = 0;
+    rows.forEach(function (x) { if (DA.isUnlocked(x.t.t) && DA.addCard(x.t.t)) added++; });
+    toast(added ? "Added " + added + " term" + (added === 1 ? "" : "s") + " to your deck" : "Those are already in your deck");
+    viewGlossary(focusTerm);
+  };
+
   if (focusTerm) {
     var node = document.getElementById("t-" + encodeURIComponent(focusTerm));
     if (node) node.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+}
+
+/* ---------------------------------------------------------------- flashcards */
+function termByName(t) { for (var i = 0; i < GL.length; i++) if (GL[i].t === t) return GL[i]; return null; }
+
+function viewCards() {
+  var cs = DA.cardStats(), deck = Object.keys(DA.cards());
+  var g = DA.glossaryCounts();
+  if (!deck.length) {
+    render('<div class="wrap"><h1>Flashcards</h1>' +
+      '<p class="lede">Turn the terms you have unlocked into a deck and review them on a spacing schedule — right answers push a card further out, wrong ones bring it straight back.</p>' +
+      '<div class="empty-state"><div class="big">★</div><h2>Your deck is empty</h2>' +
+      '<p>You have <b>' + g.unlocked + '</b> unlocked term' + (g.unlocked === 1 ? "" : "s") + ' to choose from. Add them from the glossary — one at a time, or a whole module at once.</p>' +
+      '<p style="margin-top:18px"><a class="btn" href="#/glossary">Open the glossary</a></p></div></div>');
+    return;
+  }
+  var rows = deck.map(function (t) {
+    var c = DA.cards()[t], term = termByName(t), ref = term ? lessonRef(term.l) : null;
+    var due = DA.cardDue(t);
+    var when = new Date(c.due);
+    return { t: t, c: c, term: term, ref: ref, due: due, when: when };
+  }).sort(function (a, b) { return (b.due - a.due) || (a.when - b.when); });
+
+  render('<div class="wrap"><h1>Flashcards</h1>' +
+    '<p class="lede">' + cs.total + ' card' + (cs.total === 1 ? "" : "s") + ' · ' + cs.due + ' due now · ' + cs.learned + ' settled into long intervals.</p>' +
+    '<div class="card glbar" style="margin-bottom:24px">' +
+      '<div class="glcount"><b>' + cs.due + '</b> due now' +
+        '<div class="bar good" style="margin-top:6px;width:160px"><i style="width:' +
+        (cs.total ? Math.round(cs.learned / cs.total * 100) : 0) + '%"></i></div></div>' +
+      (cs.due ? '<a class="btn" href="#/cards/review">Review ' + cs.due + ' card' + (cs.due === 1 ? "" : "s") + '</a>'
+              : '<a class="btn btn-ghost" href="#/cards/review">Review anyway</a>') +
+      '<a class="btn btn-sm btn-ghost" href="#/glossary" style="margin-left:auto">Add more terms</a>' +
+    '</div>' +
+    '<div class="deckgrid">' + rows.map(function (r) {
+      return '<div class="deckcard' + (r.due ? " due" : "") + '">' +
+        '<div class="deck-t">' + esc(r.t) + '</div>' +
+        '<div class="deck-m">' + (r.due ? "Due now" : "Due " + r.when.toLocaleDateString()) +
+          ' · box ' + r.c.box + ' · seen ' + r.c.seen + '</div>' +
+        (r.ref ? '<a class="gl-src" href="#/syllabus/' + r.ref.m.id + "/" + r.ref.i + '">Module ' + r.ref.m.number + " &rarr;</a>" : "") +
+        '<button class="deck-x" data-drop="' + esc(r.t) + '" title="Remove from deck">×</button>' +
+      "</div>";
+    }).join("") + "</div></div>");
+
+  view.querySelectorAll("[data-drop]").forEach(function (b) {
+    b.onclick = function () { DA.removeCard(b.dataset.drop); toast("Removed from deck"); viewCards(); };
+  });
+}
+
+var RV = null;
+function viewReview() {
+  var due = DA.dueCards();
+  if (!due.length) due = Object.keys(DA.cards());
+  if (!due.length) return (location.hash = "#/cards");
+  if (!RV || !RV.live) RV = { queue: shuffle(due), done: 0, again: 0, total: due.length, live: true, flipped: false };
+  paintCard();
+}
+function paintCard() {
+  if (!RV.queue.length) {
+    RV.live = false;
+    render('<div class="wrap-narrow"><div class="result pop"><div class="big">★</div>' +
+      '<h2>Deck reviewed</h2><p class="muted">' + RV.total + ' card' + (RV.total === 1 ? "" : "s") + ' · ' +
+      (RV.again ? RV.again + " coming back sooner" : "all pushed further out") + '</p>' +
+      '<div class="row" style="justify-content:center;margin-top:20px">' +
+      '<a class="btn" href="#/cards">Back to the deck</a>' +
+      '<a class="btn btn-ghost" href="#/glossary">Add more terms</a></div></div></div>');
+    return;
+  }
+  var t = RV.queue[0], g = termByName(t), ref = g ? lessonRef(g.l) : null;
+  var pct = Math.round(RV.done / RV.total * 100);
+  render('<div class="session">' +
+    '<div class="sess-top"><button class="quit" id="quit" title="Leave">×</button>' +
+      '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
+      '<span class="pill">' + RV.queue.length + ' left</span></div>' +
+    '<div class="flash' + (RV.flipped ? " flipped" : "") + '" id="flash">' +
+      '<div class="flash-side flash-front"><span class="flash-k">Term</span><h2>' + esc(t) + '</h2>' +
+        '<p class="muted">Say the definition, then reveal.</p></div>' +
+      '<div class="flash-side flash-back"><span class="flash-k">Definition</span>' +
+        '<p>' + esc(g ? g.d : "") + '</p>' +
+        (ref ? '<a class="gl-src" href="#/syllabus/' + ref.m.id + "/" + ref.i + '">' + esc(ref.l.title) + " &rarr;</a>" : "") +
+      '</div>' +
+    '</div>' +
+    (RV.flipped
+      ? '<div class="row grades"><button class="btn btn-bad btn-sm" data-g="again">Again</button>' +
+        '<button class="btn btn-sm" data-g="good">Good</button>' +
+        '<button class="btn btn-good btn-sm" data-g="easy">Easy</button></div>'
+      : '<div class="row" style="justify-content:center"><button class="btn" id="flip">Reveal</button></div>') +
+  '</div>');
+
+  document.getElementById("quit").onclick = function () { RV = null; location.hash = "#/cards"; };
+  var flip = document.getElementById("flip");
+  if (flip) flip.onclick = function () { RV.flipped = true; paintCard(); };
+  document.getElementById("flash").onclick = function () { if (!RV.flipped) { RV.flipped = true; paintCard(); } };
+  view.querySelectorAll("[data-g]").forEach(function (b) {
+    b.onclick = function () {
+      DA.gradeCard(t, b.dataset.g);
+      if (b.dataset.g === "again") { RV.again++; RV.queue.push(RV.queue.shift()); }
+      else { RV.queue.shift(); RV.done++; }
+      RV.flipped = false;
+      paintCard();
+    };
+  });
+  document.onkeydown = function (e) {
+    if (isTyping(e.target)) return;
+    if (!RV.flipped && (e.key === " " || e.key === "Enter")) { e.preventDefault(); RV.flipped = true; paintCard(); return; }
+    if (RV.flipped && /^[123]$/.test(e.key)) {
+      var map = { "1": "again", "2": "good", "3": "easy" };
+      var btn = view.querySelector('[data-g="' + map[e.key] + '"]');
+      if (btn) { e.preventDefault(); btn.click(); }
+    }
+  };
 }
 
 /* ---------------------------------------------------------------- notes page */
@@ -660,23 +872,29 @@ function viewQuizPath() {
     "</section>";
   }).join("");
 
-  var hin = DA.heartsIn();
+  var heartPanel = !DA.heartsOn()
+    ? '<div class="card" style="margin-bottom:24px;display:flex;gap:14px;align-items:center;flex-wrap:wrap">' +
+        '<span class="pill">Hearts off</span>' +
+        '<div style="font-size:14px;color:var(--ink2)">Wrong answers cost nothing — questions simply come back until you get them right.</div>' +
+        '<a class="btn btn-sm btn-ghost" style="margin-left:auto" href="#/quiz/practice">Practice mistakes' + (missN ? " (" + missN + ")" : "") + '</a></div>'
+    : '<div class="card" style="margin-bottom:24px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
+        '<div class="hearts">' + [0,1,2,3,4].map(function (i) { return '<span class="' + (i < S().hearts ? "on" : "") + '">♥</span>'; }).join("") + "</div>" +
+        '<div style="font-size:14px;color:var(--ink2)">' +
+          (S().hearts ? "<b>" + S().hearts + "</b> heart" + (S().hearts === 1 ? "" : "s") + " left"
+                      : "<b>Out of hearts.</b> Clear a recovery round to get them all back — no waiting.") + "</div>" +
+        (S().hearts < MAX_HEARTS ? '<a class="btn btn-sm" href="#/quiz/recovery">Recovery round</a>' : "") +
+        '<a class="btn btn-sm btn-ghost" style="margin-left:auto" href="#/quiz/practice">' +
+          "Practice mistakes" + (missN ? " (" + missN + ")" : "") + "</a></div>";
+
   render('<div class="wrap-narrow">' +
     "<h1>Quiz</h1>" +
     '<p class="lede">Ten units following the syllabus. Clear a unit — or finish reading the matching module — to unlock the next one.</p>' +
-    '<div class="card" style="margin-bottom:24px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
-      '<div class="hearts">' + [0,1,2,3,4].map(function (i) { return '<span class="' + (i < S().hearts ? "on" : "") + '">♥</span>'; }).join("") + "</div>" +
-      '<div style="font-size:14px;color:var(--ink2)">' +
-        (S().hearts ? "<b>" + S().hearts + "</b> heart" + (S().hearts === 1 ? "" : "s") + " left"
-                    : "<b>Out of hearts.</b> Practice mode still works and costs nothing.") +
-        (hin ? " · next in " + hin + " min" : "") + "</div>" +
-      '<a class="btn btn-sm btn-ghost" style="margin-left:auto" href="#/quiz/practice">' +
-        "Practice mistakes" + (missN ? " (" + missN + ")" : "") + "</a>" +
-    "</div>" + units + "</div>");
+    heartPanel + units + "</div>");
 }
 
 /* ---------------------------------------------------------------- session */
 var Q = null;
+var annotator = null;
 
 function buildRuntime(q) {
   var r = { src: q, type: q.type, q: q.q, explain: q.explain };
@@ -708,7 +926,19 @@ function buildRuntime(q) {
 function startSession(mode, mid, idx) {
   DA.syncHearts();
   var list, title;
-  if (mode === "practice") {
+  if (mode === "recovery") {
+    // Questions you have already missed come first; top up with ones you have
+    // seen before, so a recovery round is always revision, never new material.
+    var missed = (S().mistakes || []).map(qById).filter(Boolean);
+    var seenIds = Object.keys(S().seen || {});
+    var seen = shuffle(seenIds.map(qById).filter(Boolean)).filter(function (q) {
+      return missed.indexOf(q) < 0;
+    });
+    list = missed.concat(seen).slice(0, RECOVERY_N);
+    if (!list.length) list = shuffle(poolFor(C.modules[0].id)).slice(0, RECOVERY_N);
+    list = shuffle(list);
+    title = "Recovery round";
+  } else if (mode === "practice") {
     list = (S().mistakes || []).map(function (id) {
       return QB.filter(function (q) { return q.id === id; })[0];
     }).filter(Boolean);
@@ -722,14 +952,7 @@ function startSession(mode, mid, idx) {
     title = "Practice · your mistakes";
   } else {
     var m = moduleById(mid); if (!m) return (location.hash = "#/quiz");
-    if (S().hearts <= 0) {
-      var hin = DA.heartsIn();
-      render('<div class="wrap-narrow"><div class="empty-state"><div class="big">♥</div>' +
-        "<h2>Out of hearts</h2><p>One comes back every " + HEART_MINUTES + " minutes" + (hin ? " — next in " + hin + " min" : "") + ".<br>Practice mode costs nothing and still counts for XP.</p>" +
-        '<p style="margin-top:18px"><a class="btn" href="#/quiz/practice">Practice mistakes</a> ' +
-        '<a class="btn btn-ghost" href="#/quiz">Back</a></p></div></div>');
-      return;
-    }
+    if (DA.heartsOn() && S().hearts <= 0) { pendingReturn = "#/quiz/" + mid + "/" + idx; return outOfHearts(); }
     var pool = poolFor(mid);
     list = pool.slice(idx * Q_PER_LESSON, idx * Q_PER_LESSON + Q_PER_LESSON);
     if (!list.length) return (location.hash = "#/quiz");
@@ -776,6 +999,8 @@ function paintQuestion() {
       '<button class="quit" id="quit" title="Leave">×</button>' +
       '<div class="bar"><i style="width:' + pct + '%"></i></div>' +
       (Q.mode === "practice" ? '<span class="pill">Practice</span>' :
+       Q.mode === "recovery" ? '<span class="pill pill-warn">Recovery</span>' :
+       !DA.heartsOn() ? '<span class="pill">No hearts</span>' :
         '<div class="hearts">' + [0,1,2,3,4].map(function (i) { return '<span class="' + (i < S().hearts ? "on" : "") + '">♥</span>'; }).join("") + "</div>") +
     "</div>" +
     '<div class="q-kind">' + kind + "</div>" +
@@ -948,7 +1173,7 @@ function grade(r, sel) {
     if (!isRetry) Q.wrongIds.push(id);
     if (st.mistakes.indexOf(id) < 0) st.mistakes.unshift(id);
     if (st.mistakes.length > 60) st.mistakes.pop();
-    if (Q.mode !== "practice") { DA.loseHeart(); paintHud(); }
+    if (Q.mode === "unit") { DA.loseHeart(); paintHud(); }
     Q.requeue.push(r);
   }
   DA.save();
@@ -967,22 +1192,28 @@ function grade(r, sel) {
   document.getElementById("cont").onclick = function () {
     Q.locked = false;
     Q.queue.shift();
-    if (S().hearts <= 0 && Q.mode !== "practice") return failSession();
+    if (DA.heartsOn() && S().hearts <= 0 && Q.mode === "unit") { pendingReturn = "#/quiz/" + Q.mid + "/" + Q.idx; Q = null; return outOfHearts(); }
     paintQuestion();
   };
   document.getElementById("cont").focus();
 }
 
-function failSession() {
-  var hin = DA.heartsIn();
-  render('<div class="wrap-narrow"><div class="result">' +
+/* No clock. You get your hearts back by clearing a short round of questions
+ * you have already missed — the moment you most need the revision. */
+function outOfHearts() {
+  var missN = (S().mistakes || []).length;
+  render('<div class="wrap-narrow"><div class="result pop">' +
     '<div class="big">♥</div><h2>Out of hearts</h2>' +
-    '<p class="muted">You got ' + Q.firstTry + " of " + Q.total + " right first time. The set was not saved.</p>" +
-    '<p class="muted" style="font-size:14px">A heart returns every ' + HEART_MINUTES + " minutes" + (hin ? " — next in " + hin + " min" : "") + ". Practice mode never costs hearts.</p>" +
+    '<p class="muted" style="max-width:46ch;margin:0 auto 6px">Nothing to wait for. Clear a recovery round — ' + RECOVERY_N +
+      ' questions you have missed before — and you get all ' + MAX_HEARTS + ' back.</p>' +
+    (missN ? '<p class="muted" style="font-size:13.5px">' + missN + ' question' + (missN === 1 ? "" : "s") + ' in your mistakes queue.</p>' : "") +
     '<div class="row" style="justify-content:center;margin-top:22px">' +
-      '<a class="btn" href="#/quiz/practice">Practice mistakes</a>' +
-      '<a class="btn btn-ghost" href="#/quiz">Back to the path</a></div></div></div>');
-  Q = null;
+      '<a class="btn" href="#/quiz/recovery">Start recovery round</a>' +
+      '<a class="btn btn-ghost" href="#/quiz/practice">Free practice</a>' +
+    '</div>' +
+    '<p class="muted" style="font-size:12.5px;margin-top:18px">Reading a lesson also returns a heart. ' +
+      'Prefer no stake at all? Turn hearts off in your profile.</p>' +
+  '</div></div>');
 }
 
 function finishSession() {
@@ -990,6 +1221,21 @@ function finishSession() {
   var xp = Q.xp + XP_COMPLETE + (perfect ? XP_PERFECT : 0);
   var acc = Math.round(Q.firstTry / Q.total * 100);
   var secs = Math.round((Date.now() - Q.t0) / 1000);
+
+  if (Q.mode === "recovery") {
+    DA.refillHearts(); DA.addXp(xp); paintHud();
+    var back = pendingReturn; pendingReturn = null;
+    render('<div class="wrap-narrow"><div class="result pop">' +
+      '<div class="big" style="color:var(--bad)">♥</div><h2>Hearts restored</h2>' +
+      '<p class="muted">Recovery round cleared · +' + xp + ' XP</p>' +
+      '<div class="hearts" style="justify-content:center;font-size:26px;margin:18px 0">' +
+        [0,1,2,3,4].map(function () { return '<span class="on">♥</span>'; }).join("") + '</div>' +
+      '<div class="row" style="justify-content:center">' +
+        (back ? '<a class="btn" href="' + back + '">Back to the set</a>' : '<a class="btn" href="#/quiz">Back to the path</a>') +
+        '<a class="btn btn-ghost" href="#/quiz">The path</a>' +
+      '</div></div></div>');
+    Q = null; return;
+  }
 
   if (Q.mode === "unit") {
     var k = quizKey(Q.mid, Q.idx), prev = S().quiz[k] || {};
@@ -1026,6 +1272,7 @@ function finishSession() {
 /* ---------------------------------------------------------------- progress */
 function viewProgress() {
   var t = totals(), g = DA.glossaryCounts(), u = DA.activeUser();
+  var mt = DA.markTotals(), cs = DA.cardStats();
   var rows = C.modules.map(function (m) {
     var read = Math.round(moduleReadPct(m) * 100), qz = Math.round(moduleQuizPct(m) * 100);
     var score = Math.round((read + qz) / 2);
@@ -1061,6 +1308,9 @@ function viewProgress() {
       '<div class="stat"><b>' + t.qzDone + "/" + t.qz + "</b><span>Quiz sets cleared</span></div>" +
       '<div class="stat"><b>' + g.unlocked + "/" + g.total + "</b><span>Glossary unlocked</span></div>" +
       '<div class="stat"><b>' + t.acc + "%</b><span>Answer accuracy</span></div>" +
+      '<div class="stat"><b>' + mt.highlights + "</b><span>Highlights</span></div>" +
+      '<div class="stat"><b>' + mt.comments + "</b><span>Comments</span></div>" +
+      '<div class="stat"><b>' + cs.total + "</b><span>Flashcards</span></div>" +
     "</div>" +
     '<div class="pair">' +
       '<div class="card"><h3 style="margin-top:0">Last 14 days</h3>' +
