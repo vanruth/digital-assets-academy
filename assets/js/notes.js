@@ -427,10 +427,13 @@ function mount(root, page, opts) {
   function closeMenus() {
     [].forEach.call(document.querySelectorAll(".ne-bmenu"), function (x) { x.remove(); });
   }
-  document.addEventListener("mousedown", function (e) {
+  // Held so destroy() can detach it — mount() runs again on every note
+  // switch and drawer repaint, and these would otherwise pile up.
+  function onDocDown(e) {
     if (!e.target.closest(".ne-bmenu") && !e.target.closest("[data-handle]") && !e.target.closest(".ne-icon")) closeMenus();
     if (slash && !e.target.closest(".ne-slash") && !e.target.closest(".nb-c")) closeSlash();
-  });
+  }
+  document.addEventListener("mousedown", onDocDown);
 
   renderShell();
 
@@ -451,7 +454,13 @@ function mount(root, page, opts) {
 
   return {
     focusFirst: function () { if (page.blocks[0]) refocus(page.blocks[0].id); },
-    destroy: function () { clearTimeout(saveTimer); closeSlash(); closeMenus(); }
+    destroy: function () {
+      clearTimeout(saveTimer);
+      if (opts.onChange) opts.onChange(page);          // never lose a pending save
+      closeSlash(); closeMenus();
+      document.removeEventListener("mousedown", onDocDown);
+      window.removeEventListener("resize", autosize);
+    }
   };
 }
 

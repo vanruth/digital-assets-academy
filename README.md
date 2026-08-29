@@ -10,6 +10,8 @@ Five parts:
 - **Glossary** — 192 terms. Each definition stays locked until you mark the lesson that introduces it as read; marking a lesson read tells you exactly which terms it just added.
 - **Notes** — a Notion-style block editor with a slide-over drawer you can pull up while reading or mid-question. Lesson text can also be **highlighted and commented on**, and highlights can be sent straight into a note.
 
+Work in progress and known problems live in [BACKLOG.md](BACKLOG.md).
+
 ## Running it
 
 No build step, no framework, no dependencies. Open `index.html` in a browser, or serve the folder:
