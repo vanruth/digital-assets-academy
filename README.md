@@ -28,7 +28,13 @@ Why your key: the app is static and the repo is public, so there is no server to
 
 **Without a key at all.** **Download a brief** writes your topic, material and settings to a Markdown file with the course JSON schema attached. Hand it to any assistant, then bring the result back through **Import a course file**.
 
-Courses can be exported and imported as JSON, so one can be shared or moved between browsers.
+**Written into the repo.** A course committed under `assets/js/data/courses/` is part of the deployment: it appears on every device, survives a cleared browser, and costs nothing against the storage budget that user-made courses share. See [that folder's README](assets/js/data/courses/README.md) for the shape, and validate before committing:
+
+```bash
+python3 tools/validate-course.py
+```
+
+Courses can also be exported and imported as JSON, so one can be shared or moved between browsers.
 
 ## Running it
 

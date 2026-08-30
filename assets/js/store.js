@@ -96,6 +96,16 @@ function loadActive() {
   N = readJSON(notesKey(id), null) || blankNotes();
   if (!N.pages) N.pages = [];
 }
+/* A bundled course ships in the repo and cannot be deleted, so a profile
+ * that does not want one can hide it instead. */
+function isHidden(courseId) {
+  return !!(book.hidden && book.hidden[courseId]);
+}
+function setHidden(courseId, on) {
+  book.hidden = book.hidden || {};
+  if (on) book.hidden[courseId] = true; else delete book.hidden[courseId];
+  saveBook();
+}
 function switchCourse(courseId) {
   if (book.activeCourse === courseId) return false;
   book.activeCourse = courseId; saveBook(); loadActive();
@@ -512,6 +522,7 @@ return {
   deleteUser: deleteUser, resetActive: resetActive,
   exportProfile: exportProfile, importProfile: importProfile,
   activeCourse: activeCourse, switchCourse: switchCourse,
+  isHidden: isHidden, setHidden: setHidden,
   courseIds: courseIds, stateForCourse: stateForCourse,
   BACKUP_HOURS: BACKUP_HOURS,
   backupSupported: backupSupported, getBackupDir: getBackupDir, chooseBackupDir: chooseBackupDir,

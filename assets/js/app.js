@@ -84,9 +84,12 @@ function paintFooter() {
   f.innerHTML = COURSE.builtin
     ? '<span>Content current to <b>August 2026</b>. Figures are point-in-time — see <a href="sources.md">sources</a>.</span>' +
       '<span class="foot-sep">·</span><span>Not investment advice.</span>'
-    : '<span>' + esc(COURSE.title) + (COURSE.source && COURSE.source.kind === "generated"
-        ? ' · generated ' + esc((COURSE.source.built || "").slice(0, 10)) + ', not fact-checked'
-        : ' · imported') + '</span>';
+    : '<span>' + esc(COURSE.title) +
+        (COURSE.source && COURSE.source.kind === "bundled"
+          ? (COURSE.source.note ? ' · ' + esc(COURSE.source.note) : "")
+          : COURSE.source && COURSE.source.kind === "generated"
+            ? ' · generated ' + esc((COURSE.source.built || "").slice(0, 10)) + ', not fact-checked'
+            : ' · imported') + '</span>';
 }
 function paintHud() {
   DA.syncHearts();
@@ -360,8 +363,9 @@ function openCourse(id) {
 }
 
 function viewLibrary() {
-  var courses = DA_COURSES.list();
+  var courses = DA_COURSES.list().filter(function (c) { return !DA.isHidden(c.id) || showHidden; });
   var active = DA.activeCourse();
+  var hiddenN = DA_COURSES.list().filter(function (c) { return DA.isHidden(c.id); }).length;
   var cards = courses.map(function (c) {
     if (c.broken) {
       return '<div class="mod" style="opacity:.6"><div class="mod-top"><span class="mod-icon">!</span>' +
@@ -377,7 +381,7 @@ function viewLibrary() {
     return '<div class="coursecard' + (c.id === active ? " on" : "") + '">' +
       '<button class="coursemain" data-open="' + c.id + '">' +
         '<div class="mod-top"><span class="mod-icon">' + esc(c.icon) + '</span>' +
-        '<div><div class="mod-n">' + (c.builtin ? "Included" : c.source && c.source.kind === "generated" ? "Generated" : "Imported") +
+        '<div><div class="mod-n">' + (c.bundled ? "Written for you" : c.builtin ? "Included" : c.source && c.source.kind === "generated" ? "Generated" : "Imported") +
           (c.id === active ? " · current" : "") + '</div>' +
         '<div class="mod-title">' + esc(c.title) + '</div></div></div>' +
         '<p class="mod-tag">' + esc(c.subtitle || "") + '</p>' +
@@ -387,6 +391,8 @@ function viewLibrary() {
       '</button>' +
       '<div class="courseact">' +
         '<button class="btn btn-sm btn-ghost" data-exp="' + c.id + '">Export</button>' +
+        (c.bundled ? '<button class="btn btn-sm btn-ghost" data-hide="' + c.id + '">' +
+                     (DA.isHidden(c.id) ? "Unhide" : "Hide") + '</button>' : "") +
         (c.builtin ? "" : '<button class="btn btn-sm btn-ghost danger" data-drop="' + c.id + '">Delete</button>') +
       '</div></div>';
   }).join("");
@@ -397,6 +403,7 @@ function viewLibrary() {
     '<div class="row" style="margin-bottom:22px">' +
       '<a class="btn" href="#/courses/new">+ New course</a>' +
       '<button class="btn btn-ghost" id="lib-import">Import a course file</button>' +
+      (hiddenN ? '<button class="btn btn-ghost" id="lib-hidden">' + (showHidden ? "Hide" : "Show") + " " + hiddenN + ' hidden</button>' : "") +
       '<input type="file" id="lib-file" accept="application/json,.json" hidden>' +
     '</div>' +
     '<div class="mods">' + cards + '</div>' +
@@ -405,6 +412,17 @@ function viewLibrary() {
   view.querySelectorAll("[data-open]").forEach(function (b) {
     b.onclick = function () { openCourse(b.dataset.open); };
   });
+  view.querySelectorAll("[data-hide]").forEach(function (b) {
+    b.onclick = function () {
+      var id = b.dataset.hide, now = !DA.isHidden(id);
+      DA.setHidden(id, now);
+      if (now && DA.activeCourse() === id) { DA.switchCourse(DA_COURSES.BUILTIN_ID); loadCourse(); paintHud(); }
+      toast(now ? "Hidden from your library" : "Back in your library");
+      viewLibrary();
+    };
+  });
+  var hb = document.getElementById("lib-hidden");
+  if (hb) hb.onclick = function () { showHidden = !showHidden; viewLibrary(); };
   view.querySelectorAll("[data-exp]").forEach(function (b) {
     b.onclick = function () {
       var pack = DA_COURSES.exportCourse(b.dataset.exp);
@@ -447,6 +465,7 @@ function downloadBlob(text, type, name) {
 
 /* ---------------------------------------------------------------- builder */
 var BUILD = { material: [], busy: false, abort: null };
+var showHidden = false;
 
 function viewBuilder() {
   var mat = BUILD.material;

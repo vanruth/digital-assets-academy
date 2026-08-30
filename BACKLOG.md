@@ -66,9 +66,11 @@ As someone researching from articles, I want to paste a URL and have the app rea
 
 > **TD-n — Short title** · _impact_ · what it costs us and what fixing it involves.
 
-### TD-1 — No tests at all
-Every change is verified by hand in a browser. The quiz engine, the offset maths behind highlights, and the profile merge on import are all logic that deserves tests and has none. A regression would be found by Ruth, not by CI.
-**Fix:** the pure functions come out first — offsets, Leitner scheduling, merge, markdown detection — under any small runner. Needs a decision on whether a `package.json` is acceptable in a repo that currently has no build step.
+### TD-1 — Almost no tests
+`tools/validate-course.py` now checks course data — answer indexes in range, questions and glossary terms pointing at lessons that exist, duplicate ids, empty bodies, unstyled tags — and exits non-zero on failure. That covers content, which is where a bad push would most likely land.
+
+The *code* still has none: the quiz engine, the offset maths behind highlights, the Leitner scheduling and the profile merge on import are all unverified except by hand.
+**Fix:** pull the pure functions out and test them under any small runner. Needs a decision on whether a `package.json` is acceptable in a repo with no build step. Wiring the course validator into CI is the cheap first step.
 
 ### TD-2 — Manual cache-busting
 `index.html` carries a hand-written `?v=` on every asset. It has been bumped by hand on every release so far and forgetting it ships stale JavaScript to anyone with a warm cache.
@@ -120,6 +122,7 @@ The app is fully static and stores everything locally, so it *could* work offlin
 
 Kept so the history of decisions is visible.
 
+- **Courses can be written into the repo** — a bundled course appears on every device, survives a cleared browser, costs nothing against localStorage, and can be hidden per profile since it cannot be deleted. Validator added. 2026-08-30.
 - **Single-course architecture** — Digital Assets was hard-wired as *the* app. Courses are now data, progress is keyed per course and per profile, and backups cover every course including ones that only exist locally. 2026-08-30.
 - **Editor listener leak** — `DA_NOTES.mount()` added document and window listeners on every call and `destroy()` never removed them; they accumulated on every note switch and drawer repaint. Fixed 2026-08-29, and `destroy()` now flushes a pending save rather than dropping it.
 - **Title not editable** — click-to-focus for the area below the blocks fired on the title too and bounced the caret into the body. Fixed 2026-08-29.

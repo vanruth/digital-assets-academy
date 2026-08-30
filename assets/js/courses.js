@@ -24,7 +24,20 @@ function slug(s) {
   return String(s || "course").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "course";
 }
 
-/* The bundled course, assembled from the data files it has always used. */
+/* Courses shipped in the repo. Each file under assets/js/data/courses/
+ * pushes onto DA_BUNDLED, so a course written for you is part of the
+ * deployment: present on every device, immune to a cleared browser, and
+ * never taking up the storage budget that user-made courses share. */
+function bundledList() {
+  return (window.DA_BUNDLED || []).filter(function (c) { return c && c.id; });
+}
+function bundledById(id) {
+  var all = bundledList();
+  for (var i = 0; i < all.length; i++) if (all[i].id === id) return all[i];
+  return null;
+}
+
+/* The original course, assembled from the data files it has always used. */
 function builtin() {
   var c = window.DA_CURRICULUM;
   return {
@@ -53,7 +66,7 @@ if (!reg.some(function (r) { return r.id === BUILTIN_ID; })) {
 var cache = {};
 
 function list() {
-  return reg.map(function (r) {
+  var out = reg.map(function (r) {
     if (r.id === BUILTIN_ID) {
       var b = builtin();
       return { id: b.id, title: b.title, subtitle: b.subtitle, icon: b.icon, builtin: true,
@@ -66,15 +79,29 @@ function list() {
              glossary: c ? c.glossary.length : 0, created: r.created, source: c ? c.source : null,
              broken: !c };
   });
+  bundledList().forEach(function (b) {
+    normalise(b);
+    out.splice(1, 0, {
+      id: b.id, title: b.title, subtitle: b.subtitle, icon: b.icon,
+      builtin: true, bundled: true,
+      modules: b.modules.length, questions: b.questions.length, glossary: b.glossary.length,
+      created: b.created || "", source: b.source || { kind: "bundled" }
+    });
+  });
+  return out;
 }
 function get(id) {
   if (id === BUILTIN_ID) return builtin();
+  var b = bundledById(id);
+  if (b) return normalise(b);
   if (cache[id]) return cache[id];
   var c = readJSON(courseKey(id), null);
   if (c) cache[id] = c;
   return c;
 }
-function exists(id) { return reg.some(function (r) { return r.id === id; }); }
+function exists(id) {
+  return reg.some(function (r) { return r.id === id; }) || !!bundledById(id);
+}
 
 function add(course) {
   var base = slug(course.title), id = base, n = 2;
@@ -88,7 +115,7 @@ function add(course) {
   return course;
 }
 function update(course) {
-  if (course.id === BUILTIN_ID) return false;
+  if (course.id === BUILTIN_ID || bundledById(course.id)) return false;
   writeJSON(courseKey(course.id), course);
   cache[course.id] = course;
   reg.forEach(function (r) { if (r.id === course.id) r.title = course.title; });
@@ -96,7 +123,7 @@ function update(course) {
   return true;
 }
 function remove(id) {
-  if (id === BUILTIN_ID) return false;
+  if (id === BUILTIN_ID || bundledById(id)) return false;
   reg = reg.filter(function (r) { return r.id !== id; });
   writeJSON(REG_KEY, reg);
   delete cache[id];
@@ -172,6 +199,7 @@ function importCourse(obj) {
 
 return {
   BUILTIN_ID: BUILTIN_ID,
+  bundled: bundledList, isBundled: function (id) { return !!bundledById(id); },
   list: list, get: get, add: add, update: update, remove: remove, exists: exists,
   validate: validate, normalise: normalise,
   exportCourse: exportCourse, importCourse: importCourse
