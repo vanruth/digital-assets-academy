@@ -399,7 +399,7 @@ function viewLibrary() {
 
   render('<div class="wrap">' +
     '<h1>Your courses</h1>' +
-    '<p class="lede">Digital Assets Academy ships with the app. Anything else here you made — from a topic, your own notes and documents, or a course file someone sent you.</p>' +
+    '<p class="lede">Courses written for you sit alongside ones you build yourself — from a topic, your own notes and documents, or a course file someone sent you.</p>' +
     '<div class="row" style="margin-bottom:22px">' +
       '<a class="btn" href="#/courses/new">+ New course</a>' +
       '<button class="btn btn-ghost" id="lib-import">Import a course file</button>' +

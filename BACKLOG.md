@@ -122,6 +122,8 @@ The app is fully static and stores everything locally, so it *could* work offlin
 
 Kept so the history of decisions is visible.
 
+- **Transaction Banking** — 7 modules, 28 lessons, 90 questions, 86 terms. Written 2026-08-30 for someone new to the subject but working near it.
+- **Cloud, at a High Level** — 5 modules, 15 lessons, 46 questions, 40 terms. Written 2026-08-30 for a fast-moving beginner.
 - **Courses can be written into the repo** — a bundled course appears on every device, survives a cleared browser, costs nothing against localStorage, and can be hidden per profile since it cannot be deleted. Validator added. 2026-08-30.
 - **Single-course architecture** — Digital Assets was hard-wired as *the* app. Courses are now data, progress is keyed per course and per profile, and backups cover every course including ones that only exist locally. 2026-08-30.
 - **Editor listener leak** — `DA_NOTES.mount()` added document and window listeners on every call and `destroy()` never removed them; they accumulated on every note switch and drawer repaint. Fixed 2026-08-29, and `destroy()` now flushes a pending save rather than dropping it.
