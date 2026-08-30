@@ -4,9 +4,15 @@
 (function () {
 "use strict";
 
-var C = window.DA_CURRICULUM;
-var QB = window.DA_QUESTIONS;
-var GL = window.DA_GLOSSARY || [];
+var COURSE = null, C = null, QB = null, GL = null;
+function loadCourse() {
+  COURSE = DA_COURSES.get(DA.activeCourse()) || DA_COURSES.get(DA_COURSES.BUILTIN_ID);
+  C = { modules: COURSE.modules, updated: COURSE.updated };
+  QB = COURSE.questions;
+  GL = COURSE.glossary;
+  window.DA_ACTIVE_GLOSSARY = GL;            // store reads this for unlocking
+}
+loadCourse();
 
 var Q_PER_LESSON = 6, XP_CORRECT = 10, XP_COMPLETE = 5, XP_PERFECT = 20, XP_READ = 5;
 var RECOVERY_N = 3;      // questions you must clear to win your hearts back
@@ -72,6 +78,16 @@ function wrapTables() {
     tb.parentNode.insertBefore(w, tb); w.appendChild(tb);
   });
 }
+function paintFooter() {
+  var f = document.querySelector(".foot");
+  if (!f) return;
+  f.innerHTML = COURSE.builtin
+    ? '<span>Content current to <b>August 2026</b>. Figures are point-in-time — see <a href="sources.md">sources</a>.</span>' +
+      '<span class="foot-sep">·</span><span>Not investment advice.</span>'
+    : '<span>' + esc(COURSE.title) + (COURSE.source && COURSE.source.kind === "generated"
+        ? ' · generated ' + esc((COURSE.source.built || "").slice(0, 10)) + ', not fact-checked'
+        : ' · imported') + '</span>';
+}
 function paintHud() {
   DA.syncHearts();
   document.getElementById("hud-xp").textContent = S().xp;
@@ -82,6 +98,9 @@ function paintHud() {
   document.getElementById("who-av").textContent = u.avatar;
   document.getElementById("who-av").style.background = u.color;
   document.getElementById("who-name").textContent = u.name;
+  document.getElementById("course-ic").textContent = COURSE.icon;
+  document.getElementById("course-nm").textContent = COURSE.title;
+  paintFooter();
 }
 function setTab(name) {
   document.querySelectorAll(".tab").forEach(function (b) { b.classList.toggle("on", b.dataset.nav === name); });
@@ -209,11 +228,7 @@ function profileMenu() {
 }
 function downloadJSON(obj) {
   var name = "digital-assets-academy-" + (obj.profile.name || "profile").toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".json";
-  var blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
-  var a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = name;
-  document.body.appendChild(a); a.click();
-  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  downloadBlob(JSON.stringify(obj, null, 2), "application/json", name);
 }
 
 /* ---------------------------------------------------------------- notes drawer */
@@ -311,7 +326,13 @@ function route() {
   var h = (location.hash || "#/").replace(/^#/, "");
   var p = h.split("/").filter(Boolean);
   if (!drawer.hidden) paintDrawer();
-  if (!p.length) { setTab("home"); return viewHome(); }
+  if (!p.length) { setTab("library"); return viewLibrary(); }
+  if (p[0] === "home") { setTab("home"); return viewHome(); }
+  if (p[0] === "courses") {
+    setTab("library");
+    if (p[1] === "new") return viewBuilder();
+    return viewLibrary();
+  }
   if (p[0] === "syllabus") {
     setTab("syllabus");
     if (p[1] && p[2] !== undefined) return viewLesson(p[1], parseInt(p[2], 10));
@@ -332,6 +353,314 @@ function route() {
   location.hash = "#/";
 }
 
+/* ---------------------------------------------------------------- library */
+function openCourse(id) {
+  if (DA.switchCourse(id)) { loadCourse(); }
+  location.hash = "#/home";
+}
+
+function viewLibrary() {
+  var courses = DA_COURSES.list();
+  var active = DA.activeCourse();
+  var cards = courses.map(function (c) {
+    if (c.broken) {
+      return '<div class="mod" style="opacity:.6"><div class="mod-top"><span class="mod-icon">!</span>' +
+        '<div><div class="mod-n">Unreadable</div><div class="mod-title">' + esc(c.title) + '</div></div></div>' +
+        '<p class="mod-tag">Its content is missing from this browser.</p>' +
+        '<div class="row"><button class="btn btn-sm btn-ghost danger" data-drop="' + c.id + '">Remove</button></div></div>';
+    }
+    var st = DA.stateForCourse(c.id) || {};
+    var lessons = 0;
+    (DA_COURSES.get(c.id).modules || []).forEach(function (m) { lessons += m.lessons.length; });
+    var read = Object.keys(st.read || {}).length;
+    var pct = lessons ? Math.round(read / lessons * 100) : 0;
+    return '<div class="coursecard' + (c.id === active ? " on" : "") + '">' +
+      '<button class="coursemain" data-open="' + c.id + '">' +
+        '<div class="mod-top"><span class="mod-icon">' + esc(c.icon) + '</span>' +
+        '<div><div class="mod-n">' + (c.builtin ? "Included" : c.source && c.source.kind === "generated" ? "Generated" : "Imported") +
+          (c.id === active ? " · current" : "") + '</div>' +
+        '<div class="mod-title">' + esc(c.title) + '</div></div></div>' +
+        '<p class="mod-tag">' + esc(c.subtitle || "") + '</p>' +
+        '<div class="bar" style="margin-top:8px"><i style="width:' + pct + '%"></i></div>' +
+        '<div class="mod-meta"><span>' + c.modules + ' modules</span><span>' + c.questions + ' questions</span>' +
+        '<span>' + c.glossary + ' terms</span><span style="margin-left:auto">' + pct + '% read</span></div>' +
+      '</button>' +
+      '<div class="courseact">' +
+        '<button class="btn btn-sm btn-ghost" data-exp="' + c.id + '">Export</button>' +
+        (c.builtin ? "" : '<button class="btn btn-sm btn-ghost danger" data-drop="' + c.id + '">Delete</button>') +
+      '</div></div>';
+  }).join("");
+
+  render('<div class="wrap">' +
+    '<h1>Your courses</h1>' +
+    '<p class="lede">Digital Assets Academy ships with the app. Anything else here you made — from a topic, your own notes and documents, or a course file someone sent you.</p>' +
+    '<div class="row" style="margin-bottom:22px">' +
+      '<a class="btn" href="#/courses/new">+ New course</a>' +
+      '<button class="btn btn-ghost" id="lib-import">Import a course file</button>' +
+      '<input type="file" id="lib-file" accept="application/json,.json" hidden>' +
+    '</div>' +
+    '<div class="mods">' + cards + '</div>' +
+  '</div>');
+
+  view.querySelectorAll("[data-open]").forEach(function (b) {
+    b.onclick = function () { openCourse(b.dataset.open); };
+  });
+  view.querySelectorAll("[data-exp]").forEach(function (b) {
+    b.onclick = function () {
+      var pack = DA_COURSES.exportCourse(b.dataset.exp);
+      if (!pack) return toast("Nothing to export");
+      downloadBlob(JSON.stringify(pack, null, 2), "application/json",
+        "course-" + b.dataset.exp + ".json");
+    };
+  });
+  view.querySelectorAll("[data-drop]").forEach(function (b) {
+    b.onclick = function () {
+      var c = DA_COURSES.list().filter(function (x) { return x.id === b.dataset.drop; })[0];
+      if (!confirm("Delete " + (c ? c.title : "this course") + " and all progress on it, for every profile? Export it first if you might want it back.")) return;
+      DA_COURSES.remove(b.dataset.drop);
+      if (DA.activeCourse() === b.dataset.drop) { DA.switchCourse(DA_COURSES.BUILTIN_ID); loadCourse(); }
+      toast("Course deleted"); paintHud(); viewLibrary();
+    };
+  });
+  document.getElementById("lib-import").onclick = function () { document.getElementById("lib-file").click(); };
+  document.getElementById("lib-file").onchange = function (e) {
+    var f = e.target.files[0]; if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      try {
+        var made = DA_COURSES.importCourse(JSON.parse(r.result));
+        toast("Imported " + made.title);
+        openCourse(made.id);
+      } catch (err) { alert(err.message); }
+    };
+    r.readAsText(f);
+  };
+}
+
+function downloadBlob(text, type, name) {
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: type }));
+  a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+
+/* ---------------------------------------------------------------- builder */
+var BUILD = { material: [], busy: false, abort: null };
+
+function viewBuilder() {
+  var mat = BUILD.material;
+  render('<div class="wrap-narrow">' +
+    '<p><a href="#/" class="muted" style="font-size:14px;text-decoration:none">&larr; Your courses</a></p>' +
+    '<h1>New course</h1>' +
+    '<p class="lede">Say what you want to learn. Add your own material if you have it — the course is built from that in preference to anything the model already knows.</p>' +
+
+    '<div class="card" style="margin-bottom:16px">' +
+      '<h3 style="margin-top:0">1 · What are you learning</h3>' +
+      '<label class="fld"><span>Course name</span>' +
+        '<input class="tin" id="b-title" placeholder="Trade finance, end to end" maxlength="70"></label>' +
+      '<label class="fld"><span>What you want out of it</span>' +
+        '<textarea class="tin" id="b-topic" rows="3" placeholder="I need to understand how letters of credit, guarantees and supply chain finance actually work, and where the risk sits for the bank."></textarea></label>' +
+      '<label class="fld"><span>Where you are starting from</span>' +
+        '<select class="tin" id="b-level">' +
+          '<option value="a complete beginner">Complete beginner</option>' +
+          '<option value="someone with general professional knowledge but new to this subject" selected>New to the subject, not to the field</option>' +
+          '<option value="someone who works adjacent to this and wants depth and specifics">Working knowledge, wants depth</option>' +
+        '</select></label>' +
+    '</div>' +
+
+    '<div class="card" style="margin-bottom:16px">' +
+      '<h3 style="margin-top:0">2 · Your material <span class="muted" style="font-weight:400;font-size:13px">— optional</span></h3>' +
+      '<label class="fld"><span>Paste anything: notes, an article, a policy document</span>' +
+        '<textarea class="tin" id="b-paste" rows="4" placeholder="Paste text here…"></textarea></label>' +
+      '<div class="row" style="margin-bottom:10px">' +
+        '<button class="btn btn-sm btn-ghost" id="b-addpaste">Add pasted text</button>' +
+        '<button class="btn btn-sm btn-ghost" id="b-addfile">Add files…</button>' +
+        '<input type="file" id="b-files" multiple hidden accept=".txt,.md,.markdown,.csv,.tsv,.json,.html,.htm,text/*">' +
+        '<input class="tin" id="b-url" placeholder="https://…" style="flex:1;min-width:150px">' +
+        '<button class="btn btn-sm btn-ghost" id="b-addurl">Add URL</button>' +
+      '</div>' +
+      '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Text files only — .txt, .md, .csv, .json, .html. PDFs and Word documents need converting first. Most websites block browsers from reading them, so pasting the text is more reliable than a URL.</p>' +
+      '<div id="b-mat">' + materialList(mat) + '</div>' +
+    '</div>' +
+
+    '<div class="card" style="margin-bottom:16px">' +
+      '<h3 style="margin-top:0">3 · Shape</h3>' +
+      '<div class="row">' +
+        '<label class="fld fld-sm"><span>Modules</span><input class="tin" id="b-mods" type="number" min="2" max="12" value="6"></label>' +
+        '<label class="fld fld-sm"><span>Lessons each</span><input class="tin" id="b-les" type="number" min="2" max="8" value="4"></label>' +
+        '<label class="fld fld-sm"><span>Questions per module</span><input class="tin" id="b-qs" type="number" min="4" max="24" value="12"></label>' +
+        '<label class="fld fld-sm"><span>Terms per lesson</span><input class="tin" id="b-terms" type="number" min="0" max="8" value="3"></label>' +
+      '</div>' +
+      '<p class="muted" style="font-size:12.5px;margin:6px 0 0">Six modules of four lessons takes a couple of minutes to write and costs roughly a dollar in API usage.</p>' +
+    '</div>' +
+
+    '<div class="card" style="margin-bottom:16px">' +
+      '<h3 style="margin-top:0">4 · Your Anthropic key</h3>' +
+      (DA_BUILD.hasKey()
+        ? '<p class="muted" style="font-size:13.5px">A key is saved in this browser. It is sent only to Anthropic, and is deliberately kept out of your profile backups.</p>' +
+          '<div class="row"><button class="btn btn-sm btn-ghost" id="b-clearkey">Remove key</button></div>'
+        : '<p class="muted" style="font-size:13.5px">This app is static and public, so there is no server to hold a key — generation uses your own, stored in this browser and sent only to Anthropic. Get one at console.anthropic.com. It is never written into a backup, and never leaves this device except to Anthropic.</p>' +
+          '<label class="fld"><span>API key</span><input class="tin" id="b-key" type="password" placeholder="sk-ant-…" autocomplete="off"></label>' +
+          '<div class="row"><button class="btn btn-sm" id="b-savekey">Save key</button></div>') +
+    '</div>' +
+
+    '<div class="row" style="margin-bottom:18px">' +
+      '<button class="btn" id="b-go"' + (DA_BUILD.hasKey() ? "" : " disabled") + '>Build the course</button>' +
+      '<button class="btn btn-ghost" id="b-brief">Download a brief instead</button>' +
+    '</div>' +
+    '<p class="muted" style="font-size:12.5px;max-width:60ch">No key, or would rather not use one? <b>Download a brief</b> writes everything you have entered to a file you can hand to any assistant, and the course JSON it produces imports straight back through <b>Import a course file</b>.</p>' +
+    '<div id="b-prog"></div>' +
+  '</div>');
+
+  bindBuilder();
+}
+
+function materialList(mat) {
+  if (!mat.length) return '<p class="muted" style="font-size:13px;margin:0">No material added — the course will be built from the model\u2019s own knowledge of the topic.</p>';
+  return '<div class="matlist">' + mat.map(function (m, i) {
+    return '<div class="matrow"><span class="matkind">' + (m.kind === "file" ? "file" : m.kind === "url" ? "url" : "text") + '</span>' +
+      '<span class="matname">' + esc(m.name) + '</span>' +
+      '<span class="muted" style="font-size:12px">' + Math.round(m.text.length / 1000) + 'k chars</span>' +
+      '<button class="dw-x" data-mat="' + i + '" title="Remove">×</button></div>';
+  }).join("") + "</div>";
+}
+function refreshMaterial() {
+  var host = document.getElementById("b-mat");
+  if (!host) return;
+  host.innerHTML = materialList(BUILD.material);
+  host.querySelectorAll("[data-mat]").forEach(function (b) {
+    b.onclick = function () { BUILD.material.splice(+b.dataset.mat, 1); refreshMaterial(); };
+  });
+}
+
+function bindBuilder() {
+  refreshMaterial();
+  var $ = function (id) { return document.getElementById(id); };
+
+  if ($("b-savekey")) $("b-savekey").onclick = function () {
+    var v = $("b-key").value.trim();
+    if (!v) return $("b-key").focus();
+    DA_BUILD.setKey(v); toast("Key saved in this browser"); viewBuilder();
+  };
+  if ($("b-clearkey")) $("b-clearkey").onclick = function () {
+    DA_BUILD.setKey(""); toast("Key removed"); viewBuilder();
+  };
+
+  $("b-addpaste").onclick = function () {
+    var t = $("b-paste").value.trim();
+    if (!t) return $("b-paste").focus();
+    BUILD.material.push({ name: "Pasted text " + (BUILD.material.length + 1), kind: "paste", text: t });
+    $("b-paste").value = ""; refreshMaterial(); toast("Added");
+  };
+  $("b-addfile").onclick = function () { $("b-files").click(); };
+  $("b-files").onchange = function (e) {
+    var files = [].slice.call(e.target.files);
+    files.forEach(function (f) {
+      DA_BUILD.readFile(f)
+        .then(function (m) { BUILD.material.push(m); refreshMaterial(); toast("Added " + m.name); })
+        .catch(function (err) { toast(esc(err.message), 5000); });
+    });
+    e.target.value = "";
+  };
+  $("b-addurl").onclick = function () {
+    var u = $("b-url").value.trim();
+    if (!u) return $("b-url").focus();
+    toast("Fetching…");
+    DA_BUILD.readUrl(u)
+      .then(function (m) { BUILD.material.push(m); $("b-url").value = ""; refreshMaterial(); toast("Added " + m.name); })
+      .catch(function (err) { toast(esc(err.message), 7000); });
+  };
+
+  function brief() {
+    return {
+      title: ($("b-title").value || "").trim(),
+      topic: ($("b-topic").value || "").trim(),
+      level: $("b-level").value
+    };
+  }
+  function shape() {
+    return {
+      modules: Math.max(2, Math.min(12, +$("b-mods").value || 6)),
+      lessons: Math.max(2, Math.min(8, +$("b-les").value || 4)),
+      questions: Math.max(4, Math.min(24, +$("b-qs").value || 12)),
+      terms: Math.max(0, Math.min(8, +$("b-terms").value || 3))
+    };
+  }
+
+  $("b-brief").onclick = function () {
+    var b = brief();
+    if (!b.title || !b.topic) return toast("Give it a name and say what you want out of it");
+    var sh = shape();
+    var text =
+      "# Course brief · " + b.title + "\n\n" +
+      "Build a course for this brief and return a single JSON file matching the schema at the end.\n\n" +
+      "**What the learner wants:** " + b.topic + "\n" +
+      "**Starting from:** " + b.level + "\n" +
+      "**Shape:** " + sh.modules + " modules, " + sh.lessons + " lessons each, " +
+        sh.questions + " questions per module, " + sh.terms + " glossary terms per lesson.\n\n" +
+      (BUILD.material.length
+        ? "## Material\n\nBuild from this in preference to general knowledge.\n\n" +
+          BUILD.material.map(function (m) { return "### " + m.name + "\n\n" + m.text; }).join("\n\n")
+        : "## Material\n\nNone supplied — use your own knowledge of the subject.") +
+      "\n\n## Schema\n\n```json\n" + JSON.stringify({
+        format: "digital-assets-academy/course", version: 1,
+        course: {
+          title: b.title, subtitle: "one line", icon: "◆",
+          modules: [{ id: "m1", title: "", tagline: "", summary: "", icon: "◆", outcomes: [""],
+            lessons: [{ id: "m1l1", title: "", minutes: 8, body: "<p>350-700 words of simple HTML</p>", key: [""] }] }],
+          questions: [{ id: "q1", m: "m1", l: "m1l1", type: "mc", q: "", options: ["", "", "", ""], answer: 0, explain: "" }],
+          glossary: [{ t: "term", l: "m1l1", d: "definition" }]
+        }
+      }, null, 2) + "\n```\n\n" +
+      "Question types: `mc` (options/answer), `multi` (options/answers[]), `tf` (answer bool), " +
+      "`type` (accept[]/hint), `match` (pairs[[l,r]]), `order` (items[] in correct order). " +
+      "Every question needs `explain`. Lesson bodies may use <p> <h4> <ul> <ol> <li> <strong> <em> " +
+      "<table class=\"data\"> and <div class=\"callout\"> only.\n";
+    downloadBlob(text, "text/markdown", "course-brief-" + (b.title.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "new") + ".md");
+    toast("Brief downloaded — bring the JSON back through Import a course file");
+  };
+
+  $("b-go").onclick = function () {
+    if (BUILD.busy) return;
+    var b = brief();
+    if (!b.title || !b.topic) return toast("Give it a name and say what you want out of it");
+    var sh = shape();
+    BUILD.busy = true;
+    BUILD.abort = new AbortController();
+    $("b-go").disabled = true;
+    var prog = document.getElementById("b-prog");
+    prog.innerHTML = '<div class="card buildprog"><h3 style="margin-top:0">Building</h3>' +
+      '<div class="bar" style="margin-bottom:10px"><i id="bp-bar" style="width:4%"></i></div>' +
+      '<p class="muted" id="bp-msg" style="margin:0 0 12px">Starting…</p>' +
+      '<p class="muted" style="font-size:12.5px;margin:0 0 12px">Leave this tab open. Each module is a separate request, so progress is kept if a later one fails.</p>' +
+      '<button class="btn btn-sm btn-ghost" id="bp-cancel">Cancel</button></div>';
+    prog.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById("bp-cancel").onclick = function () { BUILD.abort.abort(); };
+
+    DA_BUILD.build(b, BUILD.material, sh, function (p) {
+      var bar = document.getElementById("bp-bar"), msg = document.getElementById("bp-msg");
+      if (bar) bar.style.width = Math.round(p.done / p.total * 100) + "%";
+      if (msg) msg.textContent = p.message;
+    }, BUILD.abort.signal)
+      .then(function (course) {
+        var made = DA_COURSES.add(course);
+        BUILD.busy = false; BUILD.material = [];
+        toast("Built " + made.title);
+        openCourse(made.id);
+      })
+      .catch(function (err) {
+        BUILD.busy = false;
+        var prog2 = document.getElementById("b-prog");
+        if (prog2) prog2.innerHTML = '<div class="card" style="border-color:var(--bad)">' +
+          '<h3 style="margin-top:0;color:var(--bad)">Build stopped</h3>' +
+          '<p style="font-size:14.5px">' + esc(err.message || "Something went wrong.") + '</p>' +
+          '<p class="muted" style="font-size:13px">Nothing was saved. Your material and settings are still here — fix the problem and press Build again.</p></div>';
+        var go = document.getElementById("b-go"); if (go) go.disabled = false;
+      });
+  };
+}
+
 /* ---------------------------------------------------------------- home */
 function viewHome() {
   var t = totals(), g = DA.glossaryCounts();
@@ -340,8 +669,8 @@ function viewHome() {
   render(
   '<div class="wrap">' +
     '<section class="hero">' +
-      '<h1>How digital assets actually work</h1>' +
-      '<p class="lede">A ' + C.modules.length + '-module syllabus, a ' + QB.length + '-question drill and a ' + GL.length + '-term glossary you unlock as you read. Written for someone who has to make decisions about this. Current to ' + C.updated + '.</p>' +
+      '<h1>' + esc(COURSE.title) + '</h1>' +
+      '<p class="lede">' + (COURSE.subtitle ? esc(COURSE.subtitle) + ' · ' : "") + C.modules.length + ' modules, ' + QB.length + ' questions and ' + GL.length + ' glossary terms you unlock as you read.</p>' +
       '<div class="row">' +
         '<a class="btn" href="#/syllabus">' + (t.readN ? "Continue reading" : "Start the syllabus") + '</a>' +
         '<a class="btn btn-ghost" href="#/quiz">Go to the quiz</a>' +
@@ -392,7 +721,7 @@ function viewSyllabus() {
     '</button>';
   }).join("");
   render('<div class="wrap"><h1>Syllabus</h1>' +
-    '<p class="lede">Ten modules, ' + totals().lessons + ' lessons. Read in order if this is new to you; jump straight to Modules 5, 6, 7 and 9 if it is not.</p>' +
+    '<p class="lede">' + C.modules.length + ' modules, ' + totals().lessons + ' lessons. Read in order if the subject is new to you; jump to what you need if it is not.</p>' +
     '<div class="mods">' + cards + '</div></div>');
 }
 
@@ -1399,6 +1728,7 @@ function maybeDailyBackup() {
 
 /* ---------------------------------------------------------------- boot */
 document.getElementById("who").onclick = profileMenu;
+document.getElementById("coursechip").onclick = function () { location.hash = "#/"; };
 
 document.addEventListener("click", function (e) {
   var note = e.target.closest("[data-note]");
@@ -1406,7 +1736,7 @@ document.addEventListener("click", function (e) {
   var go = e.target.closest("[data-go]");
   if (go) { e.preventDefault(); location.hash = go.dataset.go; return; }
   var nav = e.target.closest("[data-nav]");
-  if (nav) { e.preventDefault(); var n = nav.dataset.nav; location.hash = n === "home" ? "#/" : "#/" + n; }
+  if (nav) { e.preventDefault(); var n = nav.dataset.nav; location.hash = n === "library" ? "#/" : "#/" + n; }
 });
 document.addEventListener("keydown", function (e) {
   if ((e.metaKey || e.ctrlKey) && (e.key === "j" || e.key === "J")) { e.preventDefault(); toggleDrawer(); }

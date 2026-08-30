@@ -10,7 +10,8 @@ window.DA = (function () {
 
 var USERS_KEY  = "da-academy-users-v1";
 var LEGACY_KEY = "da-academy-v1";
-var stateKey = function (id) { return "da-academy-state-v1:" + id; };
+var stateKey = function (id, course) { return "da-academy-state-v1:" + id + ":" + (course || activeCourse()); };
+var legacyStateKey = function (id) { return "da-academy-state-v1:" + id; };
 var notesKey = function (id) { return "da-academy-notes-v1:" + id; };
 
 var MAX_HEARTS = 5, HEART_MINUTES = 20, DAILY_GOAL = 50;
@@ -19,6 +20,9 @@ var AVATARS = ["◈","◉","▲","⬡","★","◆","●","⬢","✦","▣"];
 var COLORS  = ["#3b4ee0","#12925b","#c98a12","#d3283f","#7a3bd0","#0d8a9e","#c2410c","#4d5a70"];
 
 /* ------------------------------------------------------------ low level */
+function activeCourse() {
+  return (book && book.activeCourse) || "digital-assets";
+}
 function readJSON(k, fallback) {
   try { var v = localStorage.getItem(k); return v ? JSON.parse(v) : fallback; }
   catch (e) { return fallback; }
@@ -70,22 +74,50 @@ if (!book || !book.users || !book.users.length) seed();
 if (!book.activeId || !book.users.some(function (u) { return u.id === book.activeId; }))
   book.activeId = book.users[0].id;
 if (!book.settings) { book.settings = { autoBackup: true, hearts: true }; writeJSON(USERS_KEY, book); }
+if (!book.activeCourse) { book.activeCourse = "digital-assets"; writeJSON(USERS_KEY, book); }
 
 var S = null, N = null;
 
 function loadActive() {
-  var id = book.activeId;
-  var st = readJSON(stateKey(id), null) || blankState();
+  var id = book.activeId, course = activeCourse();
+  var st = readJSON(stateKey(id, course), null);
+  if (!st && course === "digital-assets") {
+    // v2 kept one state per profile, before courses existed.
+    var legacy = readJSON(legacyStateKey(id), null);
+    if (legacy) { st = legacy; writeJSON(stateKey(id, course), st); }
+  }
+  st = st || blankState();
   var b = blankState();
   for (var k in b) if (!(k in st)) st[k] = b[k];
   if (!st.glossary) st.glossary = {};
+  if (!st.marks) st.marks = {};
+  if (!st.cards) st.cards = {};
   S = st;
   N = readJSON(notesKey(id), null) || blankNotes();
   if (!N.pages) N.pages = [];
 }
+function switchCourse(courseId) {
+  if (book.activeCourse === courseId) return false;
+  book.activeCourse = courseId; saveBook(); loadActive();
+  return true;
+}
+/* Every course this profile has touched, plus every course installed. */
+function courseIds() {
+  var ids = {}, prefix = "da-academy-state-v1:" + book.activeId + ":";
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (k && k.indexOf(prefix) === 0) ids[k.slice(prefix.length)] = true;
+  }
+  (window.DA_COURSES ? DA_COURSES.list() : []).forEach(function (c) { ids[c.id] = true; });
+  return Object.keys(ids);
+}
+function stateForCourse(courseId) {
+  if (courseId === activeCourse()) return S;
+  return readJSON(stateKey(book.activeId, courseId), null);
+}
 loadActive();
 
-function save()      { writeJSON(stateKey(book.activeId), S); }
+function save()      { writeJSON(stateKey(book.activeId, activeCourse()), S); }
 function saveNotes() { writeJSON(notesKey(book.activeId), N); }
 function saveBook()  { writeJSON(USERS_KEY, book); }
 
@@ -124,8 +156,11 @@ function addXp(n) {
 }
 
 /* ------------------------------------------------------------ glossary */
+function activeGlossary() {
+  return window.DA_ACTIVE_GLOSSARY || window.DA_GLOSSARY || [];
+}
 function termsForLesson(lessonId) {
-  return (window.DA_GLOSSARY || []).filter(function (g) { return g.l === lessonId; });
+  return activeGlossary().filter(function (g) { return g.l === lessonId; });
 }
 /* Marks a lesson read and returns the terms newly unlocked by doing so. */
 function markRead(lessonId) {
@@ -145,9 +180,9 @@ function unmarkRead(lessonId) {
 }
 function isUnlocked(term) { return !!S.glossary[term]; }
 function glossaryCounts() {
-  var all = (window.DA_GLOSSARY || []).length, got = 0;
-  (window.DA_GLOSSARY || []).forEach(function (g) { if (S.glossary[g.t]) got++; });
-  return { total: all, unlocked: got };
+  var g = activeGlossary(), got = 0;
+  g.forEach(function (x) { if (S.glossary[x.t]) got++; });
+  return { total: g.length, unlocked: got };
 }
 
 /* ------------------------------------------------------------ notes */
@@ -254,7 +289,7 @@ function createUser(name) {
     created: new Date().toISOString(), lastSeen: new Date().toISOString()
   };
   book.users.push(u); saveBook();
-  writeJSON(stateKey(u.id), blankState());
+  writeJSON(stateKey(u.id, activeCourse()), blankState());
   writeJSON(notesKey(u.id), blankNotes());
   return u;
 }
@@ -269,30 +304,29 @@ function styleUser(id, avatar, color) {
 function deleteUser(id) {
   if (book.users.length <= 1) return false;
   book.users = book.users.filter(function (u) { return u.id !== id; });
-  try { localStorage.removeItem(stateKey(id)); localStorage.removeItem(notesKey(id)); } catch (e) {}
+  try {
+    var pre = "da-academy-state-v1:" + id;
+    for (var i = localStorage.length - 1; i >= 0; i--) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf(pre) === 0) localStorage.removeItem(k);
+    }
+    localStorage.removeItem(notesKey(id));
+  } catch (e) {}
   if (book.activeId === id) book.activeId = book.users[0].id;
   saveBook(); loadActive();
   return true;
 }
 function resetActive() {
+  var pre = "da-academy-state-v1:" + book.activeId + ":";
+  for (var i = localStorage.length - 1; i >= 0; i--) {
+    var k = localStorage.key(i);
+    if (k && k.indexOf(pre) === 0) localStorage.removeItem(k);
+  }
   S = blankState(); N = blankNotes();
   save(); saveNotes();
 }
 
 /* -------------------------------------------------- export / import */
-function exportProfile(id) {
-  id = id || book.activeId;
-  var u = null;
-  book.users.forEach(function (x) { if (x.id === id) u = x; });
-  return {
-    format: "digital-assets-academy/profile",
-    version: 2,
-    exported: new Date().toISOString(),
-    profile: { name: u ? u.name : "Profile", avatar: u ? u.avatar : AVATARS[0], color: u ? u.color : COLORS[0] },
-    state: readJSON(stateKey(id), blankState()),
-    notes: readJSON(notesKey(id), blankNotes())
-  };
-}
 function uniqueName(base) {
   base = (base || "Imported").trim().slice(0, 24) || "Imported";
   var taken = {};
@@ -306,23 +340,9 @@ function uniqueName(base) {
   }
   return base + " " + Date.now().toString(36).slice(-4);
 }
-function importProfile(obj) {
-  if (!obj || obj.format !== "digital-assets-academy/profile") throw new Error("Not a Digital Assets Academy profile file.");
-  var u = createUser(uniqueName(obj.profile && obj.profile.name));
-  if (obj.profile) styleUser(u.id, obj.profile.avatar, obj.profile.color);
-  var st = blankState();
-  if (obj.state) for (var k in st) if (k in obj.state) st[k] = obj.state[k];
-  if (!st.glossary) st.glossary = {};
-  writeJSON(stateKey(u.id), st);
-  writeJSON(notesKey(u.id), (obj.notes && obj.notes.pages) ? obj.notes : blankNotes());
-  return u;
-}
-
 /* ------------------------------------------------------------ backups
  * The profile only exists in this browser, so the app backs itself up.
- * If the browser supports the File System Access API and a folder has been
- * chosen, backups are written straight there; otherwise we hand the user a
- * download. Either way it fires at most once every BACKUP_HOURS.
+ * A backup covers every course under the profile, not just the open one.
  */
 var BACKUP_HOURS = 24;
 var IDB_NAME = "da-academy", IDB_STORE = "handles";
@@ -374,9 +394,8 @@ function backupFilename(id) {
   var u = null;
   book.users.forEach(function (x) { if (x.id === (id || book.activeId)) u = x; });
   var nm = (u ? u.name : "profile").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return "digital-assets-academy-" + (nm || "profile") + "-" + todayKey() + ".json";
+  return "academy-" + (nm || "profile") + "-" + todayKey() + ".json";
 }
-/* Writes to the chosen folder. Resolves with the folder name, or rejects. */
 function writeBackupToFolder(request) {
   return getBackupDir().then(function (dir) {
     if (!dir) throw new Error("no folder chosen");
@@ -402,6 +421,75 @@ function backupDue() {
 function setAutoBackup(on) { book.settings.autoBackup = !!on; saveBook(); }
 function autoBackupOn() { return book.settings.autoBackup !== false; }
 
+function exportProfile(id) {
+  id = id || book.activeId;
+  var u = null;
+  book.users.forEach(function (x) { if (x.id === id) u = x; });
+
+  // Progress for every course this profile has touched, plus the content of
+  // any course that is not the built-in one — a backup has to be able to
+  // restore a course that only ever existed in this browser.
+  var courses = {}, library = [];
+  var pre = "da-academy-state-v1:" + id + ":";
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (!k || k.indexOf(pre) !== 0) continue;
+    var cid = k.slice(pre.length);
+    courses[cid] = readJSON(k, null);
+  }
+  if (window.DA_COURSES) {
+    DA_COURSES.list().forEach(function (c) {
+      if (c.builtin || c.broken) return;
+      var full = DA_COURSES.get(c.id);
+      if (full) library.push(full);
+    });
+  }
+  return {
+    format: "digital-assets-academy/profile",
+    version: 3,
+    exported: new Date().toISOString(),
+    profile: { name: u ? u.name : "Profile", avatar: u ? u.avatar : AVATARS[0], color: u ? u.color : COLORS[0] },
+    courses: courses,
+    library: library,
+    notes: readJSON(notesKey(id), blankNotes())
+  };
+}
+
+function importProfile(obj) {
+  if (!obj || obj.format !== "digital-assets-academy/profile") throw new Error("Not a Digital Assets Academy profile file.");
+  var u = createUser(uniqueName(obj.profile && obj.profile.name));
+  if (obj.profile) styleUser(u.id, obj.profile.avatar, obj.profile.color);
+
+  // Bring any course the backup carried that is not installed here.
+  var remap = {};
+  if (Array.isArray(obj.library) && window.DA_COURSES) {
+    obj.library.forEach(function (c) {
+      try {
+        var wanted = c.id;
+        if (DA_COURSES.exists(wanted)) { remap[wanted] = wanted; return; }
+        var made = DA_COURSES.add(DA_COURSES.normalise(JSON.parse(JSON.stringify(c))));
+        remap[wanted] = made.id;
+      } catch (e) { /* a course that will not load must not sink the import */ }
+    });
+  }
+
+  var courses = obj.courses;
+  if (!courses && obj.state) courses = { "digital-assets": obj.state };   // v2 backup
+  courses = courses || {};
+  Object.keys(courses).forEach(function (cid) {
+    var target = remap[cid] || cid;
+    var st = blankState(), src = courses[cid] || {};
+    for (var k in st) if (k in src) st[k] = src[k];
+    if (!st.glossary) st.glossary = {};
+    if (!st.marks) st.marks = {};
+    if (!st.cards) st.cards = {};
+    writeJSON(stateKey(u.id, target), st);
+  });
+
+  writeJSON(notesKey(u.id), (obj.notes && obj.notes.pages) ? obj.notes : blankNotes());
+  return u;
+}
+
 /* ------------------------------------------------------------ exports */
 return {
   MAX_HEARTS: MAX_HEARTS, HEART_MINUTES: HEART_MINUTES, DAILY_GOAL: DAILY_GOAL,
@@ -423,6 +511,8 @@ return {
   createUser: createUser, renameUser: renameUser, styleUser: styleUser,
   deleteUser: deleteUser, resetActive: resetActive,
   exportProfile: exportProfile, importProfile: importProfile,
+  activeCourse: activeCourse, switchCourse: switchCourse,
+  courseIds: courseIds, stateForCourse: stateForCourse,
   BACKUP_HOURS: BACKUP_HOURS,
   backupSupported: backupSupported, getBackupDir: getBackupDir, chooseBackupDir: chooseBackupDir,
   clearBackupDir: clearBackupDir, writeBackupToFolder: writeBackupToFolder,

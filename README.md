@@ -1,16 +1,34 @@
-# Digital Assets Academy
+# Academy
 
-A self-contained learning app on how digital assets work, written for people who have to make decisions about them — not for people who want a glossary. Content is current to **August 2026**.
+A self-contained learning app that holds **many courses**. Digital Assets Academy is the one that ships with it; everything else you make yourself — from a topic, from your own files and notes, or from a course file someone sent you.
 
-Five parts:
+Each course gets the same machinery:
 
-- **Syllabus** — 10 modules, 52 lessons. Taxonomy, cryptography and consensus, programmability, scaling and the multi-chain landscape, stablecoins, the tokenised money hierarchy, asset tokenisation, market structure and custody, risk and capital, and a 2026 field map.
-- **Quiz** — 244 questions across 10 units in a Duolingo-style path: hearts, XP, day streaks, a daily goal, unit unlocking, and a mistakes queue you can drill separately. Six question formats: multiple choice, select-all, true/false, typed answer, matching pairs and ordering.
-- **Flashcards** — turn any unlocked glossary term into a card and review it on a Leitner schedule. Grade Again / Good / Easy; right answers push a card further out, wrong ones bring it straight back.
-- **Glossary** — 192 terms. Each definition stays locked until you mark the lesson that introduces it as read; marking a lesson read tells you exactly which terms it just added.
-- **Notes** — a Notion-style block editor with a slide-over drawer you can pull up while reading or mid-question. Lesson text can also be **highlighted and commented on**, and highlights can be sent straight into a note.
+- **Syllabus** — modules and lessons you read, mark off, highlight and comment on.
+- **Quiz** — a Duolingo-style path with hearts, XP, day streaks, unit unlocking and a mistakes queue. Six question formats: multiple choice, select-all, true/false, typed answer, matching pairs and ordering.
+- **Glossary** — terms that unlock as you read the lesson that introduces them.
+- **Flashcards** — any unlocked term, reviewed on a Leitner schedule.
+- **Notes** — a Notion-style block editor with a slide-over drawer.
 
-Work in progress and known problems live in [BACKLOG.md](BACKLOG.md).
+Progress, glossary, highlights, flashcards and notes are tracked **per course, per profile**.
+
+## The bundled course
+
+**Digital Assets Academy** — 10 modules, 52 lessons, 244 questions and 192 glossary terms on how digital assets work, current to **August 2026**. Taxonomy, cryptography and consensus, programmability, scaling, stablecoins, the tokenised money hierarchy, asset tokenisation, market structure and custody, risk and capital, and a 2026 field map. Every figure is sourced in [sources.md](sources.md).
+
+## Making a course
+
+Three routes, in **Courses → New course**:
+
+**From a topic.** Say what you want to learn and how deep to go. Generation calls Claude directly from the browser using **your own Anthropic API key**, entered once and kept in this browser.
+
+Why your key: the app is static and the repo is public, so there is no server to hold a secret and no way to ship one safely. Bring-your-own-key is the pattern Anthropic's direct browser access header exists for. The key is stored under its own storage key, outside your profile, so it is **never written into a backup**, and it is sent to nobody but Anthropic. Remove it any time from the builder.
+
+**From your own material.** Paste text, or add `.txt`, `.md`, `.csv`, `.json` or `.html` files. The material is given priority over the model's own knowledge. PDFs and Word documents are not read yet — convert or paste them. URLs are attempted, but almost every site blocks cross-origin reads, so pasting the text is far more reliable.
+
+**Without a key at all.** **Download a brief** writes your topic, material and settings to a Markdown file with the course JSON schema attached. Hand it to any assistant, then bring the result back through **Import a course file**.
+
+Courses can be exported and imported as JSON, so one can be shared or moved between browsers.
 
 ## Running it
 
@@ -64,6 +82,8 @@ To move a profile to another browser or machine, **export** it — that writes a
 
 Progress lives in one browser, so the app backs itself up rather than relying on a scheduled job — nothing outside the browser can read `localStorage`, so a cron on your machine would have nothing to export.
 
+**A backup covers every course under the profile** — progress on all of them, plus the full content of any course you made, so restoring on a new machine brings back courses that only ever existed in the old browser. Your API key is deliberately excluded.
+
 When you open the app and the last backup is more than 24 hours old, a bar appears offering a one-click backup. In Chrome and Edge you can **choose a folder once** (`Profile → Backups → Choose folder…`), after which backups are written there automatically with no click, for as long as the browser keeps the permission. Otherwise it hands you a download. Either way it fires at most once a day, and it only fires on days you actually open the app — which are the only days your progress changes.
 
 Files are named `digital-assets-academy-<profile>-<date>.json` and are the same format as a manual export, so they import straight back through `Profile → Import file…`.
@@ -75,12 +95,13 @@ Turn it off with the `Daily backup` checkbox in the profile dialog.
 ```
 index.html                       app shell
 assets/css/styles.css            all styling, light and dark
-assets/js/store.js               profiles, per-profile state, glossary unlocking, backups
+assets/js/courses.js             course registry, import/export, validation
+assets/js/builder.js             material intake and course generation
+assets/js/store.js               profiles, per-course state, glossary unlocking, backups
 assets/js/notes.js               block editor
 assets/js/app.js                 router, views, quiz engine
-assets/js/data/curriculum.js     10 modules, 52 lessons
-assets/js/data/questions.js      244 questions
-assets/js/data/glossary.js       192 terms, each mapped to its lesson
+assets/js/annotate.js            highlights and margin comments
+assets/js/data/*.js              the bundled Digital Assets course
 sources.md                       every figure and date, with links
 ```
 
@@ -88,7 +109,7 @@ Asset URLs carry a `?v=` query in `index.html`. **Bump it when you deploy a chan
 
 ## Storage and privacy
 
-Everything lives in `localStorage`: `da-academy-users-v1` for the profile list, then `da-academy-state-v1:<id>` and `da-academy-notes-v1:<id>` per profile. Nothing is sent anywhere — no analytics, no cookies, no network calls. Clearing site data resets everything; there is a per-profile reset on the Progress page.
+Everything lives in `localStorage`: `da-academy-users-v1` for the profile list, `da-academy-courses-v1` for the course registry, `da-academy-course-v1:<courseId>` for course content, `da-academy-state-v1:<profileId>:<courseId>` for progress, and `da-academy-notes-v1:<profileId>` for notes. An Anthropic key, if you set one, lives at `da-academy-anthropic-key` and is excluded from exports. Nothing is sent anywhere — no analytics, no cookies, no network calls. Clearing site data resets everything; there is a per-profile reset on the Progress page.
 
 ## Editing the content
 

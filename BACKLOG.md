@@ -48,6 +48,20 @@ As someone who studies in bursts, I want to be told when my backups have gone st
 
 ---
 
+### US-4 — Read PDFs and Word documents as course material
+As someone whose study material is mostly PDFs, I want to drop them straight into the builder, so that I do not have to convert every file by hand.
+**Acceptance criteria**
+- [ ] A `.pdf` dropped into the builder has its text extracted client-side
+- [ ] A file that cannot be read says so clearly rather than failing silently
+**Notes:** needs a vendored `pdf.js` (~350 KB core plus a worker) since there is no build step to pull it from npm. `.docx` would need `mammoth.js` on top. Currently the builder accepts `.txt`, `.md`, `.csv`, `.json`, `.html` only, and rejects the rest with an explanation.
+
+### US-5 — Read a web page as course material
+As someone researching from articles, I want to paste a URL and have the app read it, so that I do not have to copy text by hand.
+**Acceptance criteria**
+- [ ] A public article URL yields usable text
+- [ ] Sites that cannot be read explain why
+**Notes:** blocked by CORS — almost no site sends headers permitting a browser to read it cross-origin. Real fixes are a serverless proxy (ties us to one host and sees every page fetched) or a third-party reader service (sends the URL to someone else). Both are privacy calls worth making deliberately. The builder currently attempts the fetch and tells the truth when it fails.
+
 ## Technical debt
 
 > **TD-n — Short title** · _impact_ · what it costs us and what fixing it involves.
@@ -76,7 +90,15 @@ Safari clears script-written storage for sites not visited in a week, so a gap i
 `DA_ANN` resets `innerHTML` to pristine and re-wraps all marks on each change. Fine at current lesson sizes, wasteful in principle, and it forces `wrapTables()` to run again afterwards.
 **Fix:** only if a lesson ever gets long enough to feel it. Listed so the coupling with `wrapTables` is not a surprise later.
 
-### TD-7 — No offline support
+### TD-7 — Course generation is untested against the live API
+The builder's request shape, JSON parsing, retry behaviour and error surfaces have never been exercised against a real Anthropic response — no key was used during development. The prompt, the fence-stripping parser, and the per-module assembly are all first-draft.
+**Fix:** run one real generation end to end, then harden whatever breaks. Expect the JSON parse and the question-shape validation to need work first.
+
+### TD-8 — A generated course can exceed localStorage
+`localStorage` is around 5 MB per origin. A large generated course is 100–300 KB, so a dozen is fine and thirty is not. `courses.js` turns a quota error into a readable message, but there is no eviction, no size display, and no warning as you approach the limit.
+**Fix:** show course sizes in the library; consider IndexedDB for course content, which has no practical cap.
+
+### TD-9 — No offline support
 The app is fully static and stores everything locally, so it *could* work offline, but there is no service worker and a cold load with no network fails.
 **Fix:** a small service worker caching the shell and data files.
 
@@ -98,6 +120,7 @@ The app is fully static and stores everything locally, so it *could* work offlin
 
 Kept so the history of decisions is visible.
 
+- **Single-course architecture** — Digital Assets was hard-wired as *the* app. Courses are now data, progress is keyed per course and per profile, and backups cover every course including ones that only exist locally. 2026-08-30.
 - **Editor listener leak** — `DA_NOTES.mount()` added document and window listeners on every call and `destroy()` never removed them; they accumulated on every note switch and drawer repaint. Fixed 2026-08-29, and `destroy()` now flushes a pending save rather than dropping it.
 - **Title not editable** — click-to-focus for the area below the blocks fired on the title too and bounced the caret into the body. Fixed 2026-08-29.
 - **Title would not wrap** — was an `<input>`; now an auto-growing textarea. Fixed 2026-08-29.

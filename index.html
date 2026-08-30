@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Digital Assets Academy</title>
-<meta name="description" content="A syllabus, notes and a Duolingo-style quiz on how digital assets work, current to 2026.">
+<title>Academy — courses you build</title>
+<meta name="description" content="Build a course from a topic, your files or your notes — then read it, drill it and keep notes on it.">
 <meta name="theme-color" content="#0b1020">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
-<link rel="stylesheet" href="assets/css/styles.css?v=2.4.2">
+<link rel="stylesheet" href="assets/css/styles.css?v=3.0.1">
 </head>
 <body>
 
@@ -15,10 +15,12 @@
   <header class="topbar">
     <button class="brand" data-nav="home" type="button">
       <span class="brand-mark">◈</span>
-      <span class="brand-text">Digital Assets <em>Academy</em></span>
+      <span class="brand-text">Academy</span>
     </button>
 
     <nav class="tabs" role="tablist">
+      <button class="tab" data-nav="library" type="button">Courses</button>
+      <button class="tab" data-nav="home" type="button">Overview</button>
       <button class="tab" data-nav="syllabus" type="button">Syllabus</button>
       <button class="tab" data-nav="quiz" type="button">Quiz</button>
       <button class="tab" data-nav="glossary" type="button">Glossary</button>
@@ -28,6 +30,9 @@
     </nav>
 
     <div class="hud">
+      <button class="who coursechip" id="coursechip" type="button" title="Switch course">
+        <span class="who-av" id="course-ic">◈</span><span class="who-name" id="course-nm">Course</span>
+      </button>
       <span class="hud-item hud-streak" title="Day streak"><i>🔥</i><b id="hud-streak">0</b></span>
       <span class="hud-item hud-xp" title="Total XP"><i>◆</i><b id="hud-xp">0</b></span>
       <span class="hud-item hud-hearts" title="Hearts"><i>♥</i><b id="hud-hearts">5</b></span>
@@ -65,12 +70,14 @@
 <div id="toast" class="toast" aria-live="polite"></div>
 <div id="modal" class="modal" hidden></div>
 
-<script src="assets/js/data/curriculum.js?v=2.4.2"></script>
-<script src="assets/js/data/questions.js?v=2.4.2"></script>
-<script src="assets/js/data/glossary.js?v=2.4.2"></script>
-<script src="assets/js/store.js?v=2.4.2"></script>
-<script src="assets/js/notes.js?v=2.4.2"></script>
-<script src="assets/js/annotate.js?v=2.4.2"></script>
-<script src="assets/js/app.js?v=2.4.2"></script>
+<script src="assets/js/data/curriculum.js?v=3.0.1"></script>
+<script src="assets/js/data/questions.js?v=3.0.1"></script>
+<script src="assets/js/data/glossary.js?v=3.0.1"></script>
+<script src="assets/js/courses.js?v=3.0.1"></script>
+<script src="assets/js/store.js?v=3.0.1"></script>
+<script src="assets/js/notes.js?v=3.0.1"></script>
+<script src="assets/js/builder.js?v=3.0.1"></script>
+<script src="assets/js/annotate.js?v=3.0.1"></script>
+<script src="assets/js/app.js?v=3.0.1"></script>
 </body>
 </html>
