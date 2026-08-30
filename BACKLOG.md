@@ -122,6 +122,7 @@ The app is fully static and stores everything locally, so it *could* work offlin
 
 Kept so the history of decisions is visible.
 
+- **Diagrams in lessons** — 11 inline SVG figures across the three courses, theme-aware through CSS variables, and excluded from the highlighter so they cannot be broken by a stray selection. 2026-08-30.
 - **Transaction Banking** — 7 modules, 28 lessons, 90 questions, 86 terms. Written 2026-08-30 for someone new to the subject but working near it.
 - **Cloud, at a High Level** — 5 modules, 15 lessons, 46 questions, 40 terms. Written 2026-08-30 for a fast-moving beginner.
 - **Courses can be written into the repo** — a bundled course appears on every device, survives a cleared browser, costs nothing against localStorage, and can be hidden per profile since it cannot be deleted. Validator added. 2026-08-30.

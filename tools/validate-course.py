@@ -18,7 +18,9 @@ QUESTION_FIELDS = {
     "match": ["pairs"],
     "order": ["items"],
 }
-ALLOWED_TAGS = {"p","h4","ul","ol","li","strong","em","br","table","thead","tbody","tr","th","td","div","q","code"}
+ALLOWED_TAGS = {"p","h4","ul","ol","li","strong","em","br","table","thead","tbody","tr","th","td","div","q","code",
+                "figure","figcaption","svg","g","rect","circle","line","path","polygon","polyline","text","tspan",
+                "defs","marker","title","lineargradient","stop","b","i","mark"}
 
 def extract(path):
     src = open(path, encoding="utf-8").read()

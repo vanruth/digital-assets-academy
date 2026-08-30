@@ -19,9 +19,23 @@ var COLORS = [
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
 function uid() { return "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
-/* Walk the text nodes, recording where each one starts in the flat string. */
+/* Walk the text nodes, recording where each one starts in the flat string.
+ * Text inside a diagram is skipped: <mark> is not valid SVG content, so
+ * wrapping a label would break the drawing. Indexing and rendering share
+ * this filter, so offsets stay consistent either way. */
+function inDiagram(node) {
+  for (var p = node.parentNode; p && p !== document; p = p.parentNode) {
+    if (p.nodeType === 1 && (p.namespaceURI === "http://www.w3.org/2000/svg" ||
+        (p.tagName && p.tagName.toLowerCase() === "svg"))) return true;
+  }
+  return false;
+}
 function textIndex(root) {
-  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+  var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: function (n) {
+      return inDiagram(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    }
+  });
   var nodes = [], pos = 0, n;
   while ((n = walker.nextNode())) {
     var len = n.nodeValue.length;

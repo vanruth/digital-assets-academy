@@ -54,6 +54,36 @@ Lesson bodies use `<p> <h4> <ul> <ol> <li> <strong> <em>`, `<table class="data">
 for comparisons, and `<div class="callout">` for a single key insight. Anything
 else is unstyled — the validator warns about it.
 
+## Diagrams
+
+Inline SVG, wrapped in a figure:
+
+```html
+<figure class="figure">
+  <svg viewBox="0 0 720 240" role="img" aria-label="...">...</svg>
+  <figcaption>What the reader should take from it.</figcaption>
+</figure>
+```
+
+Rules that matter:
+
+- **Colour with CSS variables**, never literals — `var(--ink)`, `var(--ink2)`,
+  `var(--brand)`, `var(--good)`, `var(--bad)`, `var(--line2)`, `var(--bg2)`.
+  They resolve inside inline SVG and follow light and dark themes.
+- Use the `t-strong` and `t-mute` classes on `<text>` rather than hard-coded
+  fills.
+- `viewBox` only — no `width`/`height` attributes. The stylesheet makes it
+  responsive.
+- Give every diagram a `role="img"` and an `aria-label`.
+- The caption should say what to take away, not repeat the labels.
+
+Text inside an SVG is excluded from highlighting, so a reader can highlight
+prose around a diagram without breaking it.
+
+A diagram earns its place when it shows a mechanism the prose describes
+clumsily — a flow between parties, a timeline, a layered responsibility split.
+It does not earn its place by decorating a list.
+
 Question types and their required fields:
 
 | type | fields |
