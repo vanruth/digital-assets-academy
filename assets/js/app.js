@@ -1618,70 +1618,178 @@ function finishSession() {
 }
 
 /* ---------------------------------------------------------------- progress */
+/* Per-course figures computed from any course's stored state, so the page
+ * can report on courses that are not currently open. */
+function courseStats(courseId) {
+  var course = DA_COURSES.get(courseId);
+  var st = DA.stateForCourse(courseId);
+  if (!course) return null;
+  st = st || { read: {}, quiz: {}, seen: {}, glossary: {}, marks: {}, cards: {}, days: {}, xp: 0, streak: 0, mistakes: [] };
+  var lessons = 0, readN = 0, qz = 0, qzDone = 0;
+  (course.modules || []).forEach(function (m) {
+    lessons += m.lessons.length;
+    m.lessons.forEach(function (l) { if (st.read && st.read[l.id]) readN++; });
+    var pool = (course.questions || []).filter(function (q) { return q.m === m.id; });
+    var sets = Math.max(1, Math.ceil(pool.length / Q_PER_LESSON));
+    qz += sets;
+    for (var i = 0; i < sets; i++) if ((st.quiz || {})[m.id + ":" + i] && st.quiz[m.id + ":" + i].done) qzDone++;
+  });
+  var right = 0, wrong = 0;
+  for (var k in (st.seen || {})) { right += st.seen[k].right || 0; wrong += st.seen[k].wrong || 0; }
+  var glossaryTotal = (course.glossary || []).length, glossaryGot = 0;
+  (course.glossary || []).forEach(function (g) { if ((st.glossary || {})[g.t]) glossaryGot++; });
+  var hl = 0, comments = 0;
+  for (var lid in (st.marks || {})) (st.marks[lid] || []).forEach(function (x) {
+    hl++; if (x.note && x.note.trim()) comments++;
+  });
+  var notes = 0;
+  try {
+    var raw = localStorage.getItem("da-academy-notes-v1:" + DA.activeUser().id + ":" + courseId);
+    if (raw) notes = (JSON.parse(raw).pages || []).length;
+  } catch (e) {}
+  return {
+    id: courseId, title: course.title, icon: course.icon, state: st,
+    lessons: lessons, readN: readN, qz: qz, qzDone: qzDone,
+    right: right, wrong: wrong, acc: right + wrong ? Math.round(right / (right + wrong) * 100) : 0,
+    glossaryTotal: glossaryTotal, glossaryGot: glossaryGot,
+    highlights: hl, comments: comments, cards: Object.keys(st.cards || {}).length,
+    notes: notes, xp: st.xp || 0, mistakes: (st.mistakes || []).length,
+    days: st.days || {}
+  };
+}
+
+/* Streak is computed from the union of every course's daily XP, so studying
+ * anything on a given day keeps the run alive. */
+function overallStats() {
+  var all = DA_COURSES.list().map(function (c) { return courseStats(c.id); }).filter(Boolean);
+  var t = { xp: 0, lessons: 0, readN: 0, qz: 0, qzDone: 0, right: 0, wrong: 0,
+            glossaryTotal: 0, glossaryGot: 0, highlights: 0, comments: 0, cards: 0, notes: 0,
+            courses: all.length, started: 0, days: {} };
+  all.forEach(function (c) {
+    t.xp += c.xp; t.lessons += c.lessons; t.readN += c.readN;
+    t.qz += c.qz; t.qzDone += c.qzDone; t.right += c.right; t.wrong += c.wrong;
+    t.glossaryTotal += c.glossaryTotal; t.glossaryGot += c.glossaryGot;
+    t.highlights += c.highlights; t.comments += c.comments; t.cards += c.cards; t.notes += c.notes;
+    if (c.readN || c.qzDone) t.started++;
+    for (var d in c.days) t.days[d] = (t.days[d] || 0) + c.days[d];
+  });
+  t.acc = t.right + t.wrong ? Math.round(t.right / (t.right + t.wrong) * 100) : 0;
+  var streak = 0, day = new Date();
+  if (!t.days[DA.todayKey(day)]) day.setDate(day.getDate() - 1);   // today not started yet is fine
+  while (t.days[DA.todayKey(day)]) { streak++; day.setDate(day.getDate() - 1); }
+  t.streak = streak;
+  return { total: t, courses: all };
+}
+
+var progressCourse = null;
 function viewProgress() {
-  var t = totals(), g = DA.glossaryCounts(), u = DA.activeUser();
-  var mt = DA.markTotals(), cs = DA.cardStats();
-  var rows = C.modules.map(function (m) {
-    var read = Math.round(moduleReadPct(m) * 100), qz = Math.round(moduleQuizPct(m) * 100);
-    var score = Math.round((read + qz) / 2);
+  var o = overallStats(), t = o.total, u = DA.activeUser();
+  if (!progressCourse || !o.courses.some(function (c) { return c.id === progressCourse; }))
+    progressCourse = DA.activeCourse();
+  var sel = o.courses.filter(function (c) { return c.id === progressCourse; })[0] || o.courses[0];
+
+  var days = [];
+  for (var i = 13; i >= 0; i--) {
+    var d = new Date(); d.setDate(d.getDate() - i);
+    var k = DA.todayKey(d), got = t.days[k] || 0;
+    days.push('<div title="' + k + ": " + got + ' XP across all courses" style="flex:1;text-align:center">' +
+      '<div style="height:' + Math.max(4, Math.min(46, got / 2)) + "px;background:" +
+      (got >= DAILY_GOAL ? "var(--good)" : got ? "var(--brand)" : "var(--line2)") +
+      ';border-radius:4px;margin-bottom:4px"></div>' +
+      '<span style="font-size:10px;color:var(--ink3)">' + "SMTWTFS"[d.getDay()] + "</span></div>");
+  }
+
+  var course = DA_COURSES.get(sel.id);
+  var rows = (course.modules || []).map(function (m) {
+    var lessonsRead = m.lessons.filter(function (l) { return sel.state.read && sel.state.read[l.id]; }).length;
+    var read = Math.round(lessonsRead / m.lessons.length * 100);
+    var pool = (course.questions || []).filter(function (q) { return q.m === m.id; });
+    var sets = Math.max(1, Math.ceil(pool.length / Q_PER_LESSON)), done = 0;
+    for (var i2 = 0; i2 < sets; i2++) if ((sel.state.quiz || {})[m.id + ":" + i2] && sel.state.quiz[m.id + ":" + i2].done) done++;
+    var qz = Math.round(done / sets * 100), score = Math.round((read + qz) / 2);
     return '<div class="mrow"><span class="mnum">' + m.number + "</span>" +
       "<span>" + esc(m.title) + '<br><span class="muted" style="font-size:12px">read ' + read + "% · quiz " + qz + "%</span></span>" +
       '<span class="mbar"><span class="bar' + (score === 100 ? " good" : "") + '"><i style="width:' + score + '%"></i></span></span>' +
       '<span class="mval">' + score + "%</span></div>";
   }).join("");
 
-  var days = [];
-  for (var i = 13; i >= 0; i--) {
-    var d = new Date(); d.setDate(d.getDate() - i);
-    var k = DA.todayKey(d), got = S().days[k] || 0;
-    days.push('<div title="' + k + ": " + got + ' XP" style="flex:1;text-align:center">' +
-      '<div style="height:' + Math.max(4, Math.min(46, got / 2)) + "px;background:" + (got >= DAILY_GOAL ? "var(--good)" : got ? "var(--brand)" : "var(--line2)") +
-      ';border-radius:4px;margin-bottom:4px"></div>' +
-      '<span style="font-size:10px;color:var(--ink3)">' + "SMTWTFS"[d.getDay()] + "</span></div>");
-  }
-
-  var miss = (S().mistakes || []).slice(0, 12).map(function (id) {
-    var q = QB.filter(function (x) { return x.id === id; })[0]; if (!q) return "";
-    var m = moduleById(q.m);
+  var miss = (sel.state.mistakes || []).slice(0, 8).map(function (id) {
+    var q = (course.questions || []).filter(function (x) { return x.id === id; })[0];
+    if (!q) return "";
+    var m = (course.modules || []).filter(function (x) { return x.id === q.m; })[0];
     return '<div class="miss"><div class="mq">' + esc(q.q) + "</div>" +
       '<div class="ma"><span class="pill">Module ' + (m ? m.number : "?") + "</span> " + esc(q.explain) + "</div></div>";
   }).join("");
 
   render('<div class="wrap"><h1>Progress</h1>' +
-    '<p class="lede">Profile <b>' + esc(u.name) + '</b>. Everything here lives in this browser only.</p>' +
+    '<p class="lede">Profile <b>' + esc(u.name) + '</b> · ' + t.started + " of " + t.courses + ' course' + (t.courses === 1 ? "" : "s") + ' started. Everything here lives in this browser only.</p>' +
+
+    '<h2 style="margin-top:0">Everything</h2>' +
     '<div class="statgrid">' +
-      '<div class="stat"><b>' + S().xp + "</b><span>Total XP</span></div>" +
-      '<div class="stat"><b>' + S().streak + "</b><span>Day streak</span></div>" +
+      '<div class="stat"><b>' + t.xp + "</b><span>Total XP</span></div>" +
+      '<div class="stat"><b>' + t.streak + "</b><span>Day streak</span></div>" +
       '<div class="stat"><b>' + t.readN + "/" + t.lessons + "</b><span>Lessons read</span></div>" +
       '<div class="stat"><b>' + t.qzDone + "/" + t.qz + "</b><span>Quiz sets cleared</span></div>" +
-      '<div class="stat"><b>' + g.unlocked + "/" + g.total + "</b><span>Glossary unlocked</span></div>" +
+      '<div class="stat"><b>' + t.glossaryGot + "/" + t.glossaryTotal + "</b><span>Glossary unlocked</span></div>" +
       '<div class="stat"><b>' + t.acc + "%</b><span>Answer accuracy</span></div>" +
-      '<div class="stat"><b>' + mt.highlights + "</b><span>Highlights</span></div>" +
-      '<div class="stat"><b>' + mt.comments + "</b><span>Comments</span></div>" +
-      '<div class="stat"><b>' + cs.total + "</b><span>Flashcards</span></div>" +
+      '<div class="stat"><b>' + t.highlights + "</b><span>Highlights</span></div>" +
+      '<div class="stat"><b>' + t.cards + "</b><span>Flashcards</span></div>" +
+      '<div class="stat"><b>' + t.notes + "</b><span>Notes</span></div>" +
     "</div>" +
-    '<div class="pair">' +
-      '<div class="card"><h3 style="margin-top:0">Last 14 days</h3>' +
-        '<div style="display:flex;gap:4px;align-items:flex-end;height:64px;margin-top:14px">' + days.join("") + "</div>" +
-        '<p class="muted" style="font-size:12.5px;margin:12px 0 0">Green bars hit the ' + DAILY_GOAL + " XP daily goal.</p></div>" +
-      '<div class="card"><h3 style="margin-top:0">Module mastery</h3>' +
-        '<div class="mastery" style="margin-top:14px">' + rows + "</div></div>" +
+    '<div class="card" style="margin-bottom:30px"><h3 style="margin-top:0">Last 14 days, all courses</h3>' +
+      '<div style="display:flex;gap:4px;align-items:flex-end;height:64px;margin-top:14px">' + days.join("") + "</div>" +
+      '<p class="muted" style="font-size:12.5px;margin:12px 0 0">Green bars hit the ' + DAILY_GOAL + ' XP daily goal. Studying any course keeps the streak alive.</p></div>' +
+
+    '<h2>By course</h2>' +
+    '<div class="coursetabs">' + o.courses.map(function (c) {
+      return '<button class="ctab' + (c.id === sel.id ? " on" : "") + '" data-pc="' + c.id + '">' +
+        '<span class="ctab-ic">' + esc(c.icon) + '</span>' + esc(c.title) +
+        '<i>' + c.readN + "/" + c.lessons + '</i></button>';
+    }).join("") + "</div>" +
+
+    '<div class="statgrid" style="margin-top:16px">' +
+      '<div class="stat"><b>' + sel.xp + "</b><span>XP</span></div>" +
+      '<div class="stat"><b>' + sel.readN + "/" + sel.lessons + "</b><span>Lessons read</span></div>" +
+      '<div class="stat"><b>' + sel.qzDone + "/" + sel.qz + "</b><span>Quiz sets</span></div>" +
+      '<div class="stat"><b>' + sel.glossaryGot + "/" + sel.glossaryTotal + "</b><span>Glossary</span></div>" +
+      '<div class="stat"><b>' + sel.acc + "%</b><span>Accuracy</span></div>" +
+      '<div class="stat"><b>' + sel.highlights + "</b><span>Highlights</span></div>" +
+      '<div class="stat"><b>' + sel.cards + "</b><span>Flashcards</span></div>" +
+      '<div class="stat"><b>' + sel.notes + "</b><span>Notes</span></div>" +
     "</div>" +
-    "<h2>Your mistakes" + ((S().mistakes || []).length ? " (" + S().mistakes.length + ")" : "") + "</h2>" +
-    (miss ? '<p><a class="btn btn-sm" href="#/quiz/practice">Drill these now</a></p><div class="misslist">' + miss + "</div>"
-          : '<p class="muted">Nothing yet. Questions you get wrong collect here and clear once you answer them right twice.</p>') +
+    '<div class="card"><h3 style="margin-top:0">Module mastery · ' + esc(sel.title) + "</h3>" +
+      '<div class="mastery" style="margin-top:14px">' + rows + "</div>" +
+      (sel.id === DA.activeCourse() ? "" :
+        '<p class="muted" style="font-size:12.5px;margin:14px 0 0">Not the course you have open. ' +
+        '<button class="linkish" data-openc="' + sel.id + '">Switch to it</button></p>') +
+    "</div>" +
+
+    "<h2>Mistakes · " + esc(sel.title) + (sel.mistakes ? " (" + sel.mistakes + ")" : "") + "</h2>" +
+    (miss ? (sel.id === DA.activeCourse()
+              ? '<p><a class="btn btn-sm" href="#/quiz/practice">Drill these now</a></p>'
+              : '<p><button class="btn btn-sm" data-openc="' + sel.id + '">Open this course to drill them</button></p>') +
+            '<div class="misslist">' + miss + "</div>"
+          : '<p class="muted">Nothing yet on this course. Questions you get wrong collect here and clear once you answer them right twice.</p>') +
+
     "<h2>This profile</h2>" +
-    '<p class="muted" style="font-size:14.5px;max-width:70ch">Profiles are local to this browser — there is no account and no server. Export writes a JSON file containing this profile&rsquo;s progress, glossary and notes, which you can import on another device.</p>' +
+    '<p class="muted" style="font-size:14.5px;max-width:70ch">Profiles are local to this browser — there is no account and no server. Export writes a JSON file containing every course&rsquo;s progress, glossary, highlights, flashcards and notes, plus any course you made here, which you can import on another device.</p>' +
     '<div class="row"><button class="btn btn-sm btn-ghost" id="pmenu">Manage profiles</button>' +
     '<button class="btn btn-sm btn-ghost" id="pexp">Export this profile</button>' +
     '<button class="btn btn-sm btn-ghost danger" id="reset">Reset this profile</button></div>' +
   "</div>");
 
+  view.querySelectorAll("[data-pc]").forEach(function (b) {
+    b.onclick = function () { progressCourse = b.dataset.pc; viewProgress(); };
+  });
+  view.querySelectorAll("[data-openc]").forEach(function (b) {
+    b.onclick = function () { openCourse(b.dataset.openc); };
+  });
   document.getElementById("pmenu").onclick = profileMenu;
   document.getElementById("pexp").onclick = function () { downloadJSON(DA.exportProfile()); };
   document.getElementById("reset").onclick = function () {
-    if (!confirm("Reset " + u.name + "? This clears XP, streak, reading progress, quiz results, glossary and notes for this profile.")) return;
-    DA.resetActive(); dwPageId = null; toast("Profile reset"); paintHud(); viewProgress();
+    if (!confirm("Reset " + u.name + "? This clears progress, glossary, highlights, flashcards and notes for every course in this profile.")) return;
+    DA.resetActive(); dwPageId = null; progressCourse = null;
+    toast("Profile reset"); paintHud(); viewProgress();
   };
 }
 
@@ -1713,7 +1821,7 @@ function showBackupBar() {
   var bar = el('<div class="backupbar" id="backupbar">' +
     '<span class="bb-i">↓</span>' +
     '<span class="bb-t"><b>Daily backup</b> · ' + when +
-      ' Progress lives in this browser only, so a copy on disk is the safety net.</span>' +
+      ' Every course in this profile lives in this browser only, so a copy on disk is the safety net.</span>' +
     '<button class="btn btn-sm" id="bb-go">Back up now</button>' +
     (DA.backupSupported() ? '<button class="btn btn-sm btn-ghost" id="bb-folder">Pick a folder</button>' : "") +
     '<button class="bb-x" id="bb-later" title="Not now">×</button>' +

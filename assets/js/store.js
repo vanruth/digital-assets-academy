@@ -12,7 +12,8 @@ var USERS_KEY  = "da-academy-users-v1";
 var LEGACY_KEY = "da-academy-v1";
 var stateKey = function (id, course) { return "da-academy-state-v1:" + id + ":" + (course || activeCourse()); };
 var legacyStateKey = function (id) { return "da-academy-state-v1:" + id; };
-var notesKey = function (id) { return "da-academy-notes-v1:" + id; };
+var notesKey = function (id, course) { return "da-academy-notes-v1:" + id + ":" + (course || activeCourse()); };
+var legacyNotesKey = function (id) { return "da-academy-notes-v1:" + id; };
 
 var MAX_HEARTS = 5, HEART_MINUTES = 20, DAILY_GOAL = 50;
 
@@ -68,7 +69,7 @@ function seed() {
     if (!st.glossary) st.glossary = {};
   }
   writeJSON(stateKey(first.id), st);
-  writeJSON(notesKey(first.id), blankNotes());
+  writeJSON(notesKey(first.id, "digital-assets"), blankNotes());
 }
 if (!book || !book.users || !book.users.length) seed();
 if (!book.activeId || !book.users.some(function (u) { return u.id === book.activeId; }))
@@ -93,7 +94,8 @@ function loadActive() {
   if (!st.marks) st.marks = {};
   if (!st.cards) st.cards = {};
   S = st;
-  N = readJSON(notesKey(id), null) || blankNotes();
+  migrateNotes(id);
+  N = readJSON(notesKey(id, course), null) || blankNotes();
   if (!N.pages) N.pages = [];
 }
 /* A bundled course ships in the repo and cannot be deleted, so a profile
@@ -106,6 +108,41 @@ function setHidden(courseId, on) {
   if (on) book.hidden[courseId] = true; else delete book.hidden[courseId];
   saveBook();
 }
+/* Notes used to be shared across courses, which was wrong: a note's ref
+ * stores a lesson id like "m5l3", and that means something different in
+ * every course. Split the old shared file once, attributing each page to
+ * the course whose lesson title its ref actually names. */
+function migrateNotes(userId) {
+  var legacy = readJSON(legacyNotesKey(userId), null);
+  if (!legacy || !legacy.pages) return;
+  var courses = window.DA_COURSES ? DA_COURSES.list() : [];
+  var titleIndex = {};
+  courses.forEach(function (c) {
+    var full = DA_COURSES.get(c.id);
+    if (!full) return;
+    (full.modules || []).forEach(function (m) {
+      (m.lessons || []).forEach(function (l) { titleIndex[l.title] = titleIndex[l.title] || c.id; });
+      titleIndex[m.title] = titleIndex[m.title] || c.id;
+    });
+  });
+  var buckets = {};
+  legacy.pages.forEach(function (pg) {
+    var target = "digital-assets";
+    var label = pg.ref && pg.ref.label ? String(pg.ref.label) : "";
+    var tail = label.indexOf("·") >= 0 ? label.slice(label.lastIndexOf("·") + 1).trim() : label.trim();
+    if (tail && titleIndex[tail]) target = titleIndex[tail];
+    (buckets[target] = buckets[target] || []).push(pg);
+  });
+  Object.keys(buckets).forEach(function (cid) {
+    var existing = readJSON(notesKey(userId, cid), null) || blankNotes();
+    var have = {};
+    existing.pages.forEach(function (pg) { have[pg.id] = true; });
+    buckets[cid].forEach(function (pg) { if (!have[pg.id]) existing.pages.push(pg); });
+    writeJSON(notesKey(userId, cid), existing);
+  });
+  try { localStorage.removeItem(legacyNotesKey(userId)); } catch (e) {}
+}
+
 function switchCourse(courseId) {
   if (book.activeCourse === courseId) return false;
   book.activeCourse = courseId; saveBook(); loadActive();
@@ -128,7 +165,7 @@ function stateForCourse(courseId) {
 loadActive();
 
 function save()      { writeJSON(stateKey(book.activeId, activeCourse()), S); }
-function saveNotes() { writeJSON(notesKey(book.activeId), N); }
+function saveNotes() { writeJSON(notesKey(book.activeId, activeCourse()), N); }
 function saveBook()  { writeJSON(USERS_KEY, book); }
 
 /* ------------------------------------------------------------ hearts/xp */
@@ -300,7 +337,7 @@ function createUser(name) {
   };
   book.users.push(u); saveBook();
   writeJSON(stateKey(u.id, activeCourse()), blankState());
-  writeJSON(notesKey(u.id), blankNotes());
+  writeJSON(notesKey(u.id, activeCourse()), blankNotes());
   return u;
 }
 function renameUser(id, name) {
@@ -320,17 +357,21 @@ function deleteUser(id) {
       var k = localStorage.key(i);
       if (k && k.indexOf(pre) === 0) localStorage.removeItem(k);
     }
-    localStorage.removeItem(notesKey(id));
+    var npre = "da-academy-notes-v1:" + id;
+    for (var j = localStorage.length - 1; j >= 0; j--) {
+      var nk = localStorage.key(j);
+      if (nk && nk.indexOf(npre) === 0) localStorage.removeItem(nk);
+    }
   } catch (e) {}
   if (book.activeId === id) book.activeId = book.users[0].id;
   saveBook(); loadActive();
   return true;
 }
 function resetActive() {
-  var pre = "da-academy-state-v1:" + book.activeId + ":";
+  var pres = ["da-academy-state-v1:" + book.activeId + ":", "da-academy-notes-v1:" + book.activeId];
   for (var i = localStorage.length - 1; i >= 0; i--) {
     var k = localStorage.key(i);
-    if (k && k.indexOf(pre) === 0) localStorage.removeItem(k);
+    if (k && pres.some(function (p) { return k.indexOf(p) === 0; })) localStorage.removeItem(k);
   }
   S = blankState(); N = blankNotes();
   save(); saveNotes();
@@ -461,8 +502,18 @@ function exportProfile(id) {
     profile: { name: u ? u.name : "Profile", avatar: u ? u.avatar : AVATARS[0], color: u ? u.color : COLORS[0] },
     courses: courses,
     library: library,
-    notes: readJSON(notesKey(id), blankNotes())
+    notes: notesByCourse(id)
   };
+}
+/* Notes are per course, so a backup carries a map rather than one file. */
+function notesByCourse(id) {
+  var out = {}, pre = "da-academy-notes-v1:" + id + ":";
+  for (var i = 0; i < localStorage.length; i++) {
+    var k = localStorage.key(i);
+    if (!k || k.indexOf(pre) !== 0) continue;
+    out[k.slice(pre.length)] = readJSON(k, blankNotes());
+  }
+  return out;
 }
 
 function importProfile(obj) {
@@ -496,7 +547,17 @@ function importProfile(obj) {
     writeJSON(stateKey(u.id, target), st);
   });
 
-  writeJSON(notesKey(u.id), (obj.notes && obj.notes.pages) ? obj.notes : blankNotes());
+  // v2 and early v3 backups held one shared notes file; later ones hold a
+  // map keyed by course.
+  var notes = obj.notes || {};
+  if (notes.pages) {
+    writeJSON(notesKey(u.id, "digital-assets"), notes);
+  } else {
+    Object.keys(notes).forEach(function (cid) {
+      var target = remap[cid] || cid;
+      writeJSON(notesKey(u.id, target), notes[cid] && notes[cid].pages ? notes[cid] : blankNotes());
+    });
+  }
   return u;
 }
 

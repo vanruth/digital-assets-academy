@@ -10,7 +10,7 @@ Each course gets the same machinery:
 - **Flashcards** — any unlocked term, reviewed on a Leitner schedule.
 - **Notes** — a Notion-style block editor with a slide-over drawer.
 
-Progress, glossary, highlights, flashcards and notes are tracked **per course, per profile**.
+Progress, glossary, highlights, flashcards **and notes** are all tracked **per course, per profile**. Nothing is shared between courses — a note's link to "module 5, lesson 3" means something different in each one, so sharing them was a bug rather than a feature.
 
 ## The bundled course
 
@@ -31,7 +31,8 @@ Why your key: the app is static and the repo is public, so there is no server to
 **Written into the repo.** A course committed under `assets/js/data/courses/` is part of the deployment: it appears on every device, survives a cleared browser, and costs nothing against the storage budget that user-made courses share. See [that folder's README](assets/js/data/courses/README.md) for the shape, and validate before committing:
 
 ```bash
-python3 tools/validate-course.py
+python3 tools/validate-course.py     # course data
+python3 tools/check-js.py            # references that nothing defines
 ```
 
 Courses can also be exported and imported as JSON, so one can be shared or moved between browsers.
@@ -115,7 +116,7 @@ Asset URLs carry a `?v=` query in `index.html`. **Bump it when you deploy a chan
 
 ## Storage and privacy
 
-Everything lives in `localStorage`: `da-academy-users-v1` for the profile list, `da-academy-courses-v1` for the course registry, `da-academy-course-v1:<courseId>` for course content, `da-academy-state-v1:<profileId>:<courseId>` for progress, and `da-academy-notes-v1:<profileId>` for notes. An Anthropic key, if you set one, lives at `da-academy-anthropic-key` and is excluded from exports. Nothing is sent anywhere — no analytics, no cookies, no network calls. Clearing site data resets everything; there is a per-profile reset on the Progress page.
+Everything lives in `localStorage`: `da-academy-users-v1` for the profile list, `da-academy-courses-v1` for the course registry, `da-academy-course-v1:<courseId>` for course content, and `da-academy-state-v1:<profileId>:<courseId>` plus `da-academy-notes-v1:<profileId>:<courseId>` for progress and notes. An Anthropic key, if you set one, lives at `da-academy-anthropic-key` and is excluded from exports. Nothing is sent anywhere — no analytics, no cookies, no network calls. Clearing site data resets everything; there is a per-profile reset on the Progress page.
 
 ## Editing the content
 

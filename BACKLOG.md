@@ -67,7 +67,7 @@ As someone researching from articles, I want to paste a URL and have the app rea
 > **TD-n — Short title** · _impact_ · what it costs us and what fixing it involves.
 
 ### TD-1 — Almost no tests
-`tools/validate-course.py` now checks course data — answer indexes in range, questions and glossary terms pointing at lessons that exist, duplicate ids, empty bodies, unstyled tags — and exits non-zero on failure. That covers content, which is where a bad push would most likely land.
+`tools/check-js.py` catches references to functions and variables that nothing defines — including values passed without being called, which is the exact shape of two real breakages during development. `tools/validate-course.py` checks course data — answer indexes in range, questions and glossary terms pointing at lessons that exist, duplicate ids, empty bodies, unstyled tags — and exits non-zero on failure. That covers content, which is where a bad push would most likely land.
 
 The *code* still has none: the quiz engine, the offset maths behind highlights, the Leitner scheduling and the profile merge on import are all unverified except by hand.
 **Fix:** pull the pure functions out and test them under any small runner. Needs a decision on whether a `package.json` is acceptable in a repo with no build step. Wiring the course validator into CI is the cheap first step.
@@ -122,6 +122,8 @@ The app is fully static and stores everything locally, so it *could* work offlin
 
 Kept so the history of decisions is visible.
 
+- **Notes were shared across courses** — a note's ref stores a lesson id like `m5l3`, which means something different in every course. Notes are now per course, with the old shared file split by matching each note's ref against the lesson titles in each installed course. 2026-08-30.
+- **Progress page rebuilt** — overall figures across every course first, then a per-course toggle. The day streak is computed from the union of all courses' daily XP, so studying anything keeps it alive. 2026-08-30.
 - **Diagrams in lessons** — 11 inline SVG figures across the three courses, theme-aware through CSS variables, and excluded from the highlighter so they cannot be broken by a stray selection. 2026-08-30.
 - **Transaction Banking** — 7 modules, 28 lessons, 90 questions, 86 terms. Written 2026-08-30 for someone new to the subject but working near it.
 - **Cloud, at a High Level** — 5 modules, 15 lessons, 46 questions, 40 terms. Written 2026-08-30 for a fast-moving beginner.
